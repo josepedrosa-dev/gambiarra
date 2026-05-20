@@ -623,7 +623,7 @@ def gerar_pdf(registros):
                         styles["Normal"]
                     ),
                     Paragraph(
-                        f"Precisão: ±{round(reg['precisao'],1)} metros",
+                       f"GPS capturado em: {reg['gps_timestamp']}",
                         styles["Normal"]
                     )
                 )
