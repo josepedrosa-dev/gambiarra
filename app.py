@@ -711,7 +711,7 @@ if st.session_state.registros:
 
 st.divider()
 
-for reg in registros:
+for reg in st.session_state.registros:
 
     st.image(reg["imagem"])
 
