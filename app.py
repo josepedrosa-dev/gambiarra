@@ -29,7 +29,7 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("📍 Relatório Fotográfico")
+st.title("Relatório Fotográfico")
 
 # =====================================================
 # SESSION
@@ -125,27 +125,27 @@ if gps:
 # DADOS FIXOS DO RELATÓRIO
 # =====================================================
 
-st.subheader("📋 Informações do Relatório")
+st.subheader("Informações do Relatório")
 
 col1, col2 = st.columns(2)
 
 with col1:
 
     responsavel = st.text_input(
-        "👤 Responsável *"
+        "Responsável *"
     )
 
 with col2:
 
     medicao_fiscal = st.text_input(
-        "📌 Medição Fiscal *"
+        "Medição Fiscal *"
     )
 
 # =====================================================
 # STATUS GPS
 # =====================================================
 
-st.subheader("📡 Status GPS")
+st.subheader("Status GPS")
 
 if latitude and longitude:
 
@@ -213,7 +213,7 @@ if not responsavel.strip() or not medicao_fiscal.strip():
 
 st.divider()
 
-st.subheader("📸 Capturar Foto")
+st.subheader("Capturar Foto")
 
 foto = st.camera_input(
     "Tire uma foto",
