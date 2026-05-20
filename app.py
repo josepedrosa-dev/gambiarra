@@ -16,7 +16,7 @@ from reportlab.platypus import (
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 
-# GPS
+# JS
 from streamlit_js_eval import streamlit_js_eval
 
 # =====================================================
@@ -24,7 +24,7 @@ from streamlit_js_eval import streamlit_js_eval
 # =====================================================
 
 st.set_page_config(
-    page_title="Relatório Fotográfico",
+    page_title="Relatório Fotográfico GPS",
     layout="centered"
 )
 
@@ -38,7 +38,130 @@ if "registros" not in st.session_state:
     st.session_state.registros = []
 
 # =====================================================
-# CAPTURA FOTO
+# GPS CONTÍNUO
+# =====================================================
+
+st.components.v1.html(
+    """
+    <script>
+
+    if (!window.gpsStarted) {
+
+        window.gpsStarted = true;
+
+        navigator.geolocation.watchPosition(
+
+            (position) => {
+
+                const gps = {
+
+                    latitude: position.coords.latitude,
+
+                    longitude: position.coords.longitude,
+
+                    accuracy: position.coords.accuracy,
+
+                    timestamp: new Date().toISOString()
+
+                };
+
+                localStorage.setItem(
+                    "gps_data",
+                    JSON.stringify(gps)
+                );
+
+            },
+
+            (error) => {
+
+                console.log(error);
+
+            },
+
+            {
+
+                enableHighAccuracy: true,
+
+                maximumAge: 1000,
+
+                timeout: 10000
+
+            }
+
+        );
+    }
+
+    </script>
+    """,
+    height=0
+)
+
+# =====================================================
+# RECUPERA GPS
+# =====================================================
+
+gps = streamlit_js_eval(
+    js_expressions="""
+    JSON.parse(localStorage.getItem("gps_data"))
+    """,
+    key="gps_reader"
+)
+
+latitude = None
+longitude = None
+precisao = None
+
+if gps:
+
+    latitude = gps.get("latitude")
+    longitude = gps.get("longitude")
+    precisao = gps.get("accuracy")
+
+# =====================================================
+# STATUS GPS
+# =====================================================
+
+st.subheader("📡 Status GPS")
+
+if latitude and longitude:
+
+    st.success("✅ GPS ativo")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "Latitude",
+            round(latitude, 6)
+        )
+
+    with col2:
+        st.metric(
+            "Longitude",
+            round(longitude, 6)
+        )
+
+    with col3:
+        st.metric(
+            "Precisão",
+            f"{round(precisao, 1)} m"
+        )
+
+else:
+
+    st.error(
+        """
+        ❌ GPS não disponível
+        
+        Verifique:
+        - Permissão de localização
+        - GPS ativado
+        - HTTPS habilitado
+        """
+    )
+
+# =====================================================
+# FOTO
 # =====================================================
 
 st.subheader("📸 Capturar Foto")
@@ -48,7 +171,7 @@ foto = st.camera_input(
 )
 
 # =====================================================
-# APÓS FOTO → CAPTURA GPS
+# PROCESSAMENTO
 # =====================================================
 
 if foto:
@@ -59,93 +182,6 @@ if foto:
         imagem,
         use_container_width=True
     )
-
-    st.info(
-        "📡 Capturando localização..."
-    )
-
-    # =================================================
-    # GPS VIA JAVASCRIPT
-    # =================================================
-
-    gps = streamlit_js_eval(
-        js_expressions="""
-        new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    resolve({
-                        latitude: position.coords.latitude,
-                        longitude: position.coords.longitude,
-                        accuracy: position.coords.accuracy
-                    })
-                },
-                (error) => {
-                    resolve(null)
-                },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 20000,
-                    maximumAge: 0
-                }
-            )
-        })
-        """,
-        key=f"gps_{datetime.now().timestamp()}"
-    )
-
-    latitude = None
-    longitude = None
-    precisao = None
-
-    if gps:
-
-        latitude = gps.get("latitude")
-        longitude = gps.get("longitude")
-        precisao = gps.get("accuracy")
-
-    # =================================================
-    # STATUS GPS
-    # =================================================
-
-    if latitude and longitude:
-
-        st.success("✅ GPS capturado")
-
-        st.write(f"Latitude: {latitude}")
-        st.write(f"Longitude: {longitude}")
-
-        if precisao:
-            st.write(f"Precisão: ±{round(precisao, 2)} metros")
-
-        maps_link = (
-            f"https://www.google.com/maps?q="
-            f"{latitude},{longitude}"
-        )
-
-        st.markdown(
-            f"""
-            [🌎 Abrir no Google Maps]({maps_link})
-            """
-        )
-
-    else:
-
-        st.error(
-            """
-            ❌ Não foi possível capturar GPS.
-            
-            Verifique:
-            - GPS do celular ativado
-            - Permissão do navegador
-            - HTTPS habilitado
-            """
-        )
-
-        maps_link = None
-
-    # =================================================
-    # FORMULÁRIO
-    # =================================================
 
     st.divider()
 
@@ -171,7 +207,36 @@ if foto:
     )
 
     # =================================================
-    # ADICIONAR
+    # GPS DA FOTO
+    # =================================================
+
+    maps_link = None
+
+    if latitude and longitude:
+
+        maps_link = (
+            f"https://www.google.com/maps?q="
+            f"{latitude},{longitude}"
+        )
+
+        st.success(
+            "📍 Coordenada vinculada à foto"
+        )
+
+        st.markdown(
+            f"""
+            [🌎 Abrir no Google Maps]({maps_link})
+            """
+        )
+
+    else:
+
+        st.warning(
+            "⚠️ Foto será salva sem GPS"
+        )
+
+    # =================================================
+    # SALVAR
     # =================================================
 
     if st.button(
@@ -195,6 +260,8 @@ if foto:
 
             "longitude": longitude,
 
+            "precisao": precisao,
+
             "maps_link": maps_link,
 
             "data_hora": datetime.now().strftime(
@@ -206,7 +273,9 @@ if foto:
             registro
         )
 
-        st.success("📸 Foto adicionada!")
+        st.success(
+            "📸 Foto adicionada!"
+        )
 
         st.rerun()
 
@@ -218,7 +287,7 @@ if st.session_state.registros:
 
     st.divider()
 
-    st.subheader("📑 Fotos Adicionadas")
+    st.subheader("📑 Relatório")
 
     remover = None
 
@@ -257,6 +326,10 @@ if st.session_state.registros:
 
                 st.write(
                     f"📍 Longitude: {reg['longitude']}"
+                )
+
+                st.write(
+                    f"🎯 Precisão: ±{round(reg['precisao'],1)} m"
                 )
 
                 st.markdown(
@@ -307,6 +380,8 @@ def gerar_excel(registros):
             "Latitude": r["latitude"],
 
             "Longitude": r["longitude"],
+
+            "Precisão": r["precisao"],
 
             "Google Maps": r["maps_link"],
 
@@ -376,9 +451,9 @@ def gerar_pdf(registros):
             Spacer(1, 10)
         )
 
-        # =============================================
+        # =========================================
         # IMAGEM
-        # =============================================
+        # =========================================
 
         with tempfile.NamedTemporaryFile(
             delete=False,
@@ -404,9 +479,9 @@ def gerar_pdf(registros):
             Spacer(1, 10)
         )
 
-        # =============================================
+        # =========================================
         # DESCRIÇÃO
-        # =============================================
+        # =========================================
 
         if reg["descricao"]:
 
@@ -417,9 +492,9 @@ def gerar_pdf(registros):
                 )
             )
 
-        # =============================================
+        # =========================================
         # GPS
-        # =============================================
+        # =========================================
 
         if reg["latitude"]:
 
@@ -433,6 +508,13 @@ def gerar_pdf(registros):
             elementos.append(
                 Paragraph(
                     f"Longitude: {reg['longitude']}",
+                    styles["Normal"]
+                )
+            )
+
+            elementos.append(
+                Paragraph(
+                    f"Precisão: ±{round(reg['precisao'],1)} metros",
                     styles["Normal"]
                 )
             )
@@ -475,13 +557,9 @@ if st.session_state.registros:
 
     st.divider()
 
-    st.subheader("📥 Exportar Relatório")
+    st.subheader("📥 Exportar")
 
     col1, col2 = st.columns(2)
-
-    # =============================================
-    # EXCEL
-    # =============================================
 
     with col1:
 
@@ -503,10 +581,6 @@ if st.session_state.registros:
                 "officedocument.spreadsheetml.sheet"
             )
         )
-
-    # =============================================
-    # PDF
-    # =============================================
 
     with col2:
 
@@ -533,5 +607,5 @@ if st.session_state.registros:
 st.divider()
 
 st.caption(
-    "📍 GPS capturado automaticamente após a foto"
+    "📍 GPS contínuo via watchPosition()"
 )
