@@ -692,7 +692,14 @@ if st.session_state.registros:
 
 st.divider()
 
-st.caption(
-    f"📍 GPS contínuo via watchPosition()\n"
-    f"GPS capturado em: {reg['gps_timestamp']}"
+for reg in registros:
+
+    st.image(reg["imagem"])
+
+    st.caption(
+        f"""
+📍 GPS contínuo via watchPosition()
+
+GPS capturado em: {reg['gps_timestamp']}
+"""
 )
