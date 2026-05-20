@@ -582,32 +582,51 @@ def gerar_pdf(registros):
                 )
             )
 
-        if reg["latitude"]:
-
-            link = (
-                f'<link href="{reg["maps_link"]}">'
-                f'Abrir localização no Google Maps'
-                f'</link>'
-            )
-
-            elementos.append(
-                Paragraph(
-                    link,
-                    styles["Normal"]
-                )
-            )
-
-        else:
-
-            elementos.append(
-                Paragraph(
-                    "Sem coordenadas GPS",
-                    styles["Normal"]
-                )
-            )
-
+          if reg["latitude"] and reg["longitude"]:
+    
         elementos.append(
-            Spacer(1, 30)
+            Paragraph(
+                f"<b>Latitude:</b> {reg['latitude']}",
+                styles["Normal"]
+            )
+        )
+    
+        elementos.append(
+            Paragraph(
+                f"<b>Longitude:</b> {reg['longitude']}",
+                styles["Normal"]
+            )
+        )
+    
+        if reg.get("precisao"):
+    
+            elementos.append(
+                Paragraph(
+                    f"<b>Precisão:</b> ±{round(reg['precisao'], 1)} metros",
+                    styles["Normal"]
+                )
+            )
+    
+        link = (
+            f'<link href="{reg["maps_link"]}">'
+            f'Abrir localização no Google Maps'
+            f'</link>'
+        )
+    
+        elementos.append(
+            Paragraph(
+                link,
+                styles["Normal"]
+            )
+        )
+    
+    else:
+    
+        elementos.append(
+            Paragraph(
+                "Sem coordenadas GPS",
+                styles["Normal"]
+            )
         )
 
     doc.build(elementos)
