@@ -319,6 +319,8 @@ if foto:
                     "longitude": longitude,
 
                     "precisao": precisao,
+                    
+                    "gps_timestamp": gps.get("timestamp"),
 
                     "maps_link": maps_link,
 
@@ -691,5 +693,5 @@ if st.session_state.registros:
 st.divider()
 
 st.caption(
-    "📍 GPS contínuo via watchPosition()"
+    "📍 GPS contínuo via watchPosition() \n f"GPS capturado em: {reg['gps_timestamp']}"
 )
