@@ -1,9 +1,8 @@
 import streamlit as st
 from PIL import Image
-from PIL.ExifTags import TAGS, GPSTAGS
-import pandas as pd
 from io import BytesIO
 from datetime import datetime
+import pandas as pd
 import tempfile
 import os
 
@@ -12,201 +11,213 @@ from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
     Spacer,
-    Image as RLImage,
-    PageBreak
+    Image as RLImage
 )
+
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 
-# -----------------------------------
+# GEOLOCATION
+from streamlit_geolocation import streamlit_geolocation
+
+# ==========================================
 # CONFIG
-# -----------------------------------
+# ==========================================
 
 st.set_page_config(
-    page_title="Relatório Fotográfico GPS",
+    page_title="Relatório Fotográfico",
     layout="wide"
 )
 
-st.title("📍 Relatório Fotográfico com Coordenadas")
+st.title("📍 Relatório Fotográfico Inteligente")
 
-# -----------------------------------
-# FUNÇÕES
-# -----------------------------------
+# ==========================================
+# SESSION STATE
+# ==========================================
 
-def converter_para_decimal(valor):
-    graus = float(valor[0])
-    minutos = float(valor[1])
-    segundos = float(valor[2])
+if "registros" not in st.session_state:
+    st.session_state.registros = []
 
-    return graus + (minutos / 60) + (segundos / 3600)
+# ==========================================
+# GEOLOCALIZAÇÃO
+# ==========================================
 
-def extrair_exif(imagem):
-    try:
-        return imagem._getexif()
-    except:
-        return None
+st.subheader("📡 Captura de Localização")
 
-def extrair_dados(imagem):
-    exif = extrair_exif(imagem)
+location = streamlit_geolocation()
 
-    if not exif:
-        return None
+latitude = None
+longitude = None
 
-    gps_info = {}
-    data_foto = None
+if location:
 
-    for tag, value in exif.items():
+    latitude = location["latitude"]
+    longitude = location["longitude"]
 
-        nome_tag = TAGS.get(tag, tag)
+    st.success("Localização capturada!")
 
-        # DATA FOTO
-        if nome_tag == "DateTime":
-            data_foto = value
+    st.write(f"Latitude: {latitude}")
+    st.write(f"Longitude: {longitude}")
 
-        # GPS
-        if nome_tag == "GPSInfo":
+else:
+    st.warning("Permita o acesso à localização do navegador.")
 
-            for gps_tag in value:
+# ==========================================
+# CAPTURA DA FOTO
+# ==========================================
 
-                sub_tag = GPSTAGS.get(gps_tag, gps_tag)
+st.subheader("📸 Captura de Foto")
 
-                gps_info[sub_tag] = value[gps_tag]
+foto = st.camera_input("Tire uma foto")
 
-    latitude = None
-    longitude = None
+# ==========================================
+# PREVIEW
+# ==========================================
 
-    try:
+if foto:
 
-        latitude = converter_para_decimal(
-            gps_info["GPSLatitude"]
+    imagem = Image.open(foto)
+
+    st.subheader("🖼 Pré-visualização")
+
+    st.image(
+        imagem,
+        use_container_width=True
+    )
+
+    nome_apontamento = st.text_input(
+        "Nome do apontamento",
+        value=f"Apontamento {len(st.session_state.registros)+1}"
+    )
+
+    data_hora = datetime.now().strftime(
+        "%d-%m-%Y %H:%M:%S"
+    )
+
+    # ==========================================
+    # CONFIRMAR FOTO
+    # ==========================================
+
+    if st.button("✅ Confirmar Foto"):
+
+        nome_arquivo = (
+            f"{nome_apontamento.replace(' ', '_')}_"
+            f"{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}"
         )
 
-        longitude = converter_para_decimal(
-            gps_info["GPSLongitude"]
-        )
+        maps_link = None
 
-        if gps_info["GPSLatitudeRef"] != "N":
-            latitude = -latitude
+        if latitude and longitude:
 
-        if gps_info["GPSLongitudeRef"] != "E":
-            longitude = -longitude
-
-    except:
-        pass
-
-    return {
-        "latitude": latitude,
-        "longitude": longitude,
-        "data_foto": data_foto
-    }
-
-def gerar_link_maps(lat, lon):
-
-    if lat and lon:
-        return f"https://www.google.com/maps?q={lat},{lon}"
-
-    return "Sem coordenada"
-
-# -----------------------------------
-# UPLOAD
-# -----------------------------------
-
-arquivos = st.file_uploader(
-    "Envie as fotos",
-    type=["jpg", "jpeg", "png"],
-    accept_multiple_files=True
-)
-
-# -----------------------------------
-# PROCESSAMENTO
-# -----------------------------------
-
-if arquivos:
-
-    registros = []
-
-    for i, arquivo in enumerate(arquivos, start=1):
-
-        imagem = Image.open(arquivo)
-
-        dados = extrair_dados(imagem)
-
-        data_formatada = datetime.now().strftime("%d-%m-%Y")
-
-        nome_foto = f"Foto_{i}_{data_formatada}"
-
-        if dados:
-
-            lat = dados["latitude"]
-            lon = dados["longitude"]
-
-            link_maps = gerar_link_maps(lat, lon)
-
-        else:
-
-            lat = None
-            lon = None
-            link_maps = "Sem coordenada"
-
-        registros.append({
-            "Apontamento": f"Apontamento {i}",
-            "Nome Foto": nome_foto,
-            "Latitude": lat,
-            "Longitude": lon,
-            "Link Maps": link_maps,
-            "Imagem": imagem
-        })
-
-    # -----------------------------------
-    # VISUALIZAÇÃO
-    # -----------------------------------
-
-    st.subheader("📷 Prévia")
-
-    for reg in registros:
-
-        st.markdown(f"## {reg['Apontamento']}")
-
-        st.write(reg["Nome Foto"])
-
-        st.image(
-            reg["Imagem"],
-            width=400
-        )
-
-        if reg["Latitude"] and reg["Longitude"]:
-
-            st.markdown(
-                f"""
-                📍 [Abrir Localização no Google Maps]({reg['Link Maps']})
-                """
+            maps_link = (
+                f"https://www.google.com/maps?q="
+                f"{latitude},{longitude}"
             )
 
-        else:
+        registro = {
+            "apontamento": nome_apontamento,
+            "nome_arquivo": nome_arquivo,
+            "imagem": imagem.copy(),
+            "latitude": latitude,
+            "longitude": longitude,
+            "maps_link": maps_link,
+            "data_hora": data_hora
+        }
 
-            st.error("Foto sem coordenada GPS")
+        st.session_state.registros.append(registro)
+
+        st.success("Foto adicionada ao relatório!")
+
+# ==========================================
+# SIDEBAR
+# ==========================================
+
+st.sidebar.title("📋 Relatório")
+
+st.sidebar.success(
+    f"{len(st.session_state.registros)} fotos adicionadas"
+)
+
+# ==========================================
+# PREVIEW RELATÓRIO
+# ==========================================
+
+if st.session_state.registros:
+
+    st.subheader("📑 Prévia do Relatório")
+
+    remover_index = None
+
+    for idx, reg in enumerate(st.session_state.registros):
+
+        st.markdown(f"## {reg['apontamento']}")
+
+        col1, col2 = st.columns([1, 1])
+
+        with col1:
+
+            st.image(
+                reg["imagem"],
+                use_container_width=True
+            )
+
+        with col2:
+
+            st.write(f"📷 {reg['nome_arquivo']}")
+
+            st.write(f"🕒 {reg['data_hora']}")
+
+            if reg["latitude"] and reg["longitude"]:
+
+                st.write(f"📍 Latitude: {reg['latitude']}")
+                st.write(f"📍 Longitude: {reg['longitude']}")
+
+                st.markdown(
+                    f"""
+                    [🌎 Abrir no Google Maps]({reg['maps_link']})
+                    """
+                )
+
+            else:
+
+                st.error("Sem coordenadas GPS")
+
+            if st.button(
+                f"🗑 Remover {idx+1}"
+            ):
+                remover_index = idx
 
         st.divider()
 
-    # -----------------------------------
-    # EXCEL
-    # -----------------------------------
+    # REMOVE ITEM
+    if remover_index is not None:
+
+        st.session_state.registros.pop(remover_index)
+
+        st.rerun()
+
+# ==========================================
+# GERAR EXCEL
+# ==========================================
+
+def gerar_excel(registros):
 
     df = pd.DataFrame([
         {
-            "Apontamento": r["Apontamento"],
-            "Nome Foto": r["Nome Foto"],
-            "Latitude": r["Latitude"],
-            "Longitude": r["Longitude"],
-            "Google Maps": r["Link Maps"]
+            "Apontamento": r["apontamento"],
+            "Arquivo": r["nome_arquivo"],
+            "Latitude": r["latitude"],
+            "Longitude": r["longitude"],
+            "Data/Hora": r["data_hora"],
+            "Google Maps": r["maps_link"]
         }
         for r in registros
     ])
 
-    excel_buffer = BytesIO()
+    output = BytesIO()
 
     with pd.ExcelWriter(
-        excel_buffer,
+        output,
         engine="openpyxl"
     ) as writer:
 
@@ -215,40 +226,48 @@ if arquivos:
             index=False
         )
 
-    st.download_button(
-        label="📥 Baixar Excel",
-        data=excel_buffer.getvalue(),
-        file_name="relatorio_fotos.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    return output.getvalue()
 
-    # -----------------------------------
-    # PDF
-    # -----------------------------------
+# ==========================================
+# GERAR PDF
+# ==========================================
 
-    pdf_buffer = BytesIO()
+def gerar_pdf(registros):
+
+    buffer = BytesIO()
 
     doc = SimpleDocTemplate(
-        pdf_buffer,
+        buffer,
         pagesize=A4
     )
 
-    elementos = []
-
     styles = getSampleStyleSheet()
+
+    elementos = []
 
     for reg in registros:
 
         elementos.append(
             Paragraph(
-                f"<b>{reg['Apontamento']}</b>",
+                f"<b>{reg['apontamento']}</b>",
                 styles["Heading2"]
             )
         )
 
         elementos.append(
+            Spacer(1, 10)
+        )
+
+        elementos.append(
             Paragraph(
-                reg["Nome Foto"],
+                reg["nome_arquivo"],
+                styles["Normal"]
+            )
+        )
+
+        elementos.append(
+            Paragraph(
+                reg["data_hora"],
                 styles["Normal"]
             )
         )
@@ -257,44 +276,56 @@ if arquivos:
             Spacer(1, 10)
         )
 
-        # Salva imagem temporária
+        # IMAGEM TEMPORÁRIA
         with tempfile.NamedTemporaryFile(
             delete=False,
             suffix=".jpg"
         ) as tmp:
 
-            caminho_temp = tmp.name
+            caminho = tmp.name
 
-            reg["Imagem"].save(
-                caminho_temp,
+            reg["imagem"].save(
+                caminho,
                 format="JPEG"
             )
 
-        img_pdf = RLImage(
-            caminho_temp,
-            width=300,
-            height=220
+        img = RLImage(
+            caminho,
+            width=350,
+            height=260
         )
 
-        elementos.append(img_pdf)
+        elementos.append(img)
 
         elementos.append(
             Spacer(1, 10)
         )
 
-        if reg["Latitude"] and reg["Longitude"]:
-
-            link = reg["Link Maps"]
-
-            texto_link = f'''
-            <link href="{link}">
-            📍 Abrir localização no Google Maps
-            </link>
-            '''
+        if reg["latitude"] and reg["longitude"]:
 
             elementos.append(
                 Paragraph(
-                    texto_link,
+                    f"Latitude: {reg['latitude']}",
+                    styles["Normal"]
+                )
+            )
+
+            elementos.append(
+                Paragraph(
+                    f"Longitude: {reg['longitude']}",
+                    styles["Normal"]
+                )
+            )
+
+            link = (
+                f'<link href="{reg["maps_link"]}">'
+                f'Abrir localização no Google Maps'
+                f'</link>'
+            )
+
+            elementos.append(
+                Paragraph(
+                    link,
                     styles["Normal"]
                 )
             )
@@ -303,7 +334,7 @@ if arquivos:
 
             elementos.append(
                 Paragraph(
-                    "Foto sem coordenada GPS",
+                    "Sem coordenadas GPS",
                     styles["Normal"]
                 )
             )
@@ -314,24 +345,58 @@ if arquivos:
 
     doc.build(elementos)
 
-    # Remove imagens temporárias
-    for arquivo in os.listdir(tempfile.gettempdir()):
+    # REMOVE TEMP FILES
+    for arq in os.listdir(tempfile.gettempdir()):
 
-        if arquivo.endswith(".jpg"):
+        if arq.endswith(".jpg"):
 
             try:
                 os.remove(
                     os.path.join(
                         tempfile.gettempdir(),
-                        arquivo
+                        arq
                     )
                 )
             except:
                 pass
 
-    st.download_button(
-        label="📄 Baixar Relatório PDF",
-        data=pdf_buffer.getvalue(),
-        file_name="relatorio_fotografico.pdf",
-        mime="application/pdf"
-    )
+    return buffer.getvalue()
+
+# ==========================================
+# GERAR RELATÓRIOS
+# ==========================================
+
+if st.session_state.registros:
+
+    st.subheader("📤 Gerar Relatórios")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        excel_bytes = gerar_excel(
+            st.session_state.registros
+        )
+
+        st.download_button(
+            label="📥 Baixar Excel",
+            data=excel_bytes,
+            file_name="relatorio_fotografico.xlsx",
+            mime=(
+                "application/vnd.openxmlformats-officedocument"
+                ".spreadsheetml.sheet"
+            )
+        )
+
+    with col2:
+
+        pdf_bytes = gerar_pdf(
+            st.session_state.registros
+        )
+
+        st.download_button(
+            label="📄 Baixar PDF",
+            data=pdf_bytes,
+            file_name="relatorio_fotografico.pdf",
+            mime="application/pdf"
+        )
