@@ -340,7 +340,7 @@ if foto:
 
                     "precisao": precisao,
 
-                    "gps_timestamp": gps_timestamp,
+                    "gps_timestamp": datetime.now().astimezone().strftime("%d/%m/%Y %H:%M:%S GMT-03"),
 
                     "maps_link": maps_link,
 
