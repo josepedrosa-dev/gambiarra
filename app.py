@@ -621,8 +621,7 @@ def gerar_pdf(registros):
                     Paragraph(
                         f"<b>Precisão:</b> ±{round(reg['precisao'], 1)} metros",
                         styles["Normal"]
-                    )
-
+                    ),
                     Paragraph(
                         f"Precisão: ±{round(reg['precisao'],1)} metros",
                         styles["Normal"]
