@@ -693,5 +693,6 @@ if st.session_state.registros:
 st.divider()
 
 st.caption(
-    "📍 GPS contínuo via watchPosition() \n f"GPS capturado em: {reg['gps_timestamp']}"
+    f"📍 GPS contínuo via watchPosition()\n"
+    f"GPS capturado em: {reg['gps_timestamp']}"
 )
