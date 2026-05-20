@@ -20,29 +20,32 @@ from reportlab.lib.pagesizes import A4
 # GEOLOCATION
 from streamlit_geolocation import streamlit_geolocation
 
-# ==========================================
+# =====================================================
 # CONFIG
-# ==========================================
+# =====================================================
 
 st.set_page_config(
     page_title="Relatório Fotográfico",
-    layout="wide"
+    layout="centered"
 )
 
-st.title("📍 Relatório Fotográfico Inteligente")
+st.title("Relatório Fotográfico")
 
-# ==========================================
+# =====================================================
 # SESSION STATE
-# ==========================================
+# =====================================================
 
 if "registros" not in st.session_state:
     st.session_state.registros = []
 
-# ==========================================
-# GEOLOCALIZAÇÃO
-# ==========================================
+if "finalizar" not in st.session_state:
+    st.session_state.finalizar = False
 
-st.subheader("📡 Captura de Localização")
+# =====================================================
+# CAPTURA GEOLOCALIZAÇÃO
+# =====================================================
+
+st.subheader("1️⃣ Capturar localização")
 
 location = streamlit_geolocation()
 
@@ -51,34 +54,47 @@ longitude = None
 
 if location:
 
-    latitude = location["latitude"]
-    longitude = location["longitude"]
+    latitude = location.get("latitude")
+    longitude = location.get("longitude")
 
-    st.success("Localização capturada!")
+if latitude and longitude:
+
+    st.success("📡 Localização capturada")
 
     st.write(f"Latitude: {latitude}")
     st.write(f"Longitude: {longitude}")
 
 else:
-    st.warning("Permita o acesso à localização do navegador.")
 
-# ==========================================
-# CAPTURA DA FOTO
-# ==========================================
+    st.warning(
+        """
+        Permita o acesso à localização do navegador.
+        
+        Android:
+        Configurações → Localização → Permitir
+        
+        Chrome:
+        Permitir acesso à localização
+        """
+    )
 
-st.subheader("📸 Captura de Foto")
+# =====================================================
+# FOTO
+# =====================================================
 
-foto = st.camera_input("Tire uma foto")
+st.subheader("2️⃣ Tirar foto")
 
-# ==========================================
-# PREVIEW
-# ==========================================
+foto = st.camera_input("Capturar imagem")
+
+# =====================================================
+# PREVIEW DA FOTO
+# =====================================================
 
 if foto:
 
     imagem = Image.open(foto)
 
-    st.subheader("🖼 Pré-visualização")
+    st.subheader("3️⃣ Confirmar foto")
 
     st.image(
         imagem,
@@ -90,19 +106,14 @@ if foto:
         value=f"Apontamento {len(st.session_state.registros)+1}"
     )
 
-    data_hora = datetime.now().strftime(
-        "%d-%m-%Y %H:%M:%S"
+    observacao = st.text_area(
+        "Observação"
     )
 
-    # ==========================================
-    # CONFIRMAR FOTO
-    # ==========================================
+    if st.button("✅ Adicionar Foto"):
 
-    if st.button("✅ Confirmar Foto"):
-
-        nome_arquivo = (
-            f"{nome_apontamento.replace(' ', '_')}_"
-            f"{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}"
+        data_hora = datetime.now().strftime(
+            "%d/%m/%Y %H:%M:%S"
         )
 
         maps_link = None
@@ -116,7 +127,7 @@ if foto:
 
         registro = {
             "apontamento": nome_apontamento,
-            "nome_arquivo": nome_arquivo,
+            "observacao": observacao,
             "imagem": imagem.copy(),
             "latitude": latitude,
             "longitude": longitude,
@@ -126,46 +137,33 @@ if foto:
 
         st.session_state.registros.append(registro)
 
-        st.success("Foto adicionada ao relatório!")
+        st.success("📸 Foto adicionada!")
 
-# ==========================================
-# SIDEBAR
-# ==========================================
+        st.rerun()
 
-st.sidebar.title("📋 Relatório")
-
-st.sidebar.success(
-    f"{len(st.session_state.registros)} fotos adicionadas"
-)
-
-# ==========================================
-# PREVIEW RELATÓRIO
-# ==========================================
+# =====================================================
+# FOTOS ADICIONADAS
+# =====================================================
 
 if st.session_state.registros:
 
-    st.subheader("📑 Prévia do Relatório")
+    st.subheader("4️⃣ Fotos adicionadas")
 
-    remover_index = None
+    remover = None
 
     for idx, reg in enumerate(st.session_state.registros):
 
-        st.markdown(f"## {reg['apontamento']}")
-
-        col1, col2 = st.columns([1, 1])
-
-        with col1:
+        with st.expander(f"📷 {reg['apontamento']}"):
 
             st.image(
                 reg["imagem"],
-                use_container_width=True
+                width=300
             )
 
-        with col2:
-
-            st.write(f"📷 {reg['nome_arquivo']}")
-
             st.write(f"🕒 {reg['data_hora']}")
+
+            if reg["observacao"]:
+                st.write(f"📝 {reg['observacao']}")
 
             if reg["latitude"] and reg["longitude"]:
 
@@ -183,33 +181,85 @@ if st.session_state.registros:
                 st.error("Sem coordenadas GPS")
 
             if st.button(
-                f"🗑 Remover {idx+1}"
+                f"🗑 Remover {idx}",
+                key=f"rem_{idx}"
             ):
-                remover_index = idx
+                remover = idx
 
-        st.divider()
+    if remover is not None:
 
-    # REMOVE ITEM
-    if remover_index is not None:
-
-        st.session_state.registros.pop(remover_index)
+        st.session_state.registros.pop(remover)
 
         st.rerun()
 
-# ==========================================
-# GERAR EXCEL
-# ==========================================
+# =====================================================
+# FINALIZAR
+# =====================================================
+
+if st.session_state.registros:
+
+    st.subheader("5️⃣ Finalizar")
+
+    if st.button("📑 Visualizar Relatório"):
+
+        st.session_state.finalizar = True
+
+# =====================================================
+# PRÉVIA RELATÓRIO
+# =====================================================
+
+if st.session_state.finalizar:
+
+    st.header("📄 Prévia do Relatório")
+
+    for idx, reg in enumerate(
+        st.session_state.registros,
+        start=1
+    ):
+
+        st.markdown(f"## {reg['apontamento']}")
+
+        st.write(
+            f"Foto {idx}_"
+            f"{datetime.now().strftime('%d-%m-%Y')}"
+        )
+
+        st.image(
+            reg["imagem"],
+            use_container_width=True
+        )
+
+        if reg["observacao"]:
+            st.write(f"📝 {reg['observacao']}")
+
+        if reg["latitude"] and reg["longitude"]:
+
+            st.markdown(
+                f"""
+                📍 [Abrir localização no Google Maps]({reg['maps_link']})
+                """
+            )
+
+        else:
+
+            st.error("Sem coordenadas GPS")
+
+        st.divider()
+
+# =====================================================
+# EXCEL
+# =====================================================
 
 def gerar_excel(registros):
 
     df = pd.DataFrame([
         {
             "Apontamento": r["apontamento"],
-            "Arquivo": r["nome_arquivo"],
+            "Data": r["data_hora"],
             "Latitude": r["latitude"],
             "Longitude": r["longitude"],
-            "Data/Hora": r["data_hora"],
-            "Google Maps": r["maps_link"]
+            "Google Maps": r["maps_link"],
+            "Observação": r["observacao"]
         }
         for r in registros
     ])
@@ -228,9 +278,9 @@ def gerar_excel(registros):
 
     return output.getvalue()
 
-# ==========================================
-# GERAR PDF
-# ==========================================
+# =====================================================
+# PDF
+# =====================================================
 
 def gerar_pdf(registros):
 
@@ -245,7 +295,10 @@ def gerar_pdf(registros):
 
     elementos = []
 
-    for reg in registros:
+    for idx, reg in enumerate(
+        registros,
+        start=1
+    ):
 
         elementos.append(
             Paragraph(
@@ -260,7 +313,7 @@ def gerar_pdf(registros):
 
         elementos.append(
             Paragraph(
-                reg["nome_arquivo"],
+                f"Foto {idx}",
                 styles["Normal"]
             )
         )
@@ -276,7 +329,7 @@ def gerar_pdf(registros):
             Spacer(1, 10)
         )
 
-        # IMAGEM TEMPORÁRIA
+        # IMAGEM TEMP
         with tempfile.NamedTemporaryFile(
             delete=False,
             suffix=".jpg"
@@ -300,6 +353,15 @@ def gerar_pdf(registros):
         elementos.append(
             Spacer(1, 10)
         )
+
+        if reg["observacao"]:
+
+            elementos.append(
+                Paragraph(
+                    f"Observação: {reg['observacao']}",
+                    styles["Normal"]
+                )
+            )
 
         if reg["latitude"] and reg["longitude"]:
 
@@ -345,30 +407,15 @@ def gerar_pdf(registros):
 
     doc.build(elementos)
 
-    # REMOVE TEMP FILES
-    for arq in os.listdir(tempfile.gettempdir()):
-
-        if arq.endswith(".jpg"):
-
-            try:
-                os.remove(
-                    os.path.join(
-                        tempfile.gettempdir(),
-                        arq
-                    )
-                )
-            except:
-                pass
-
     return buffer.getvalue()
 
-# ==========================================
-# GERAR RELATÓRIOS
-# ==========================================
+# =====================================================
+# DOWNLOADS
+# =====================================================
 
-if st.session_state.registros:
+if st.session_state.finalizar:
 
-    st.subheader("📤 Gerar Relatórios")
+    st.subheader("📥 Downloads")
 
     col1, col2 = st.columns(2)
 
@@ -379,13 +426,10 @@ if st.session_state.registros:
         )
 
         st.download_button(
-            label="📥 Baixar Excel",
+            label="📊 Baixar Excel",
             data=excel_bytes,
-            file_name="relatorio_fotografico.xlsx",
-            mime=(
-                "application/vnd.openxmlformats-officedocument"
-                ".spreadsheetml.sheet"
-            )
+            file_name="relatorio.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
     with col2:
@@ -397,6 +441,6 @@ if st.session_state.registros:
         st.download_button(
             label="📄 Baixar PDF",
             data=pdf_bytes,
-            file_name="relatorio_fotografico.pdf",
+            file_name="relatorio.pdf",
             mime="application/pdf"
         )
