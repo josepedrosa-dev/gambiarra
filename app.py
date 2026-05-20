@@ -10,8 +10,7 @@ from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
     Spacer,
-    Image as RLImage,
-    PageBreak
+    Image as RLImage
 )
 
 from reportlab.lib.styles import getSampleStyleSheet
@@ -29,7 +28,7 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("Relatório Fotográfico")
+st.title("📍 Relatório Fotográfico")
 
 # =====================================================
 # SESSION
@@ -114,44 +113,44 @@ gps = streamlit_js_eval(
 latitude = None
 longitude = None
 precisao = None
+gps_timestamp = None
 
 if gps:
 
     latitude = gps.get("latitude")
     longitude = gps.get("longitude")
     precisao = gps.get("accuracy")
+    gps_timestamp = gps.get("timestamp")
 
 # =====================================================
 # DADOS FIXOS DO RELATÓRIO
 # =====================================================
 
-st.subheader("Informações do Relatório")
+st.subheader("📋 Informações do Relatório")
 
 col1, col2 = st.columns(2)
 
 with col1:
 
     responsavel = st.text_input(
-        "Responsável *"
+        "👤 Responsável *"
     )
 
 with col2:
 
     medicao_fiscal = st.text_input(
-        "Medição Fiscal *"
+        "📌 Medição Fiscal *"
     )
 
 # =====================================================
 # STATUS GPS
 # =====================================================
 
-st.subheader("Status GPS")
+st.subheader("📡 Status GPS")
 
-if latitude and longitude:
+if latitude is not None and longitude is not None:
 
-    st.success(
-        "✅ GPS ativo"
-    )
+    st.success("✅ GPS ativo")
 
     col1, col2, col3 = st.columns(3)
 
@@ -159,34 +158,42 @@ if latitude and longitude:
 
         st.metric(
             "Latitude",
-            round(latitude, 6)
+            round(float(latitude), 6)
         )
 
     with col2:
 
         st.metric(
             "Longitude",
-            round(longitude, 6)
+            round(float(longitude), 6)
         )
 
     with col3:
 
-        st.metric(
-            "Precisão",
-            f"{round(precisao,1)} m"
+        if precisao is not None:
+
+            st.metric(
+                "Precisão",
+                f"{round(float(precisao),1)} m"
+            )
+
+    if gps_timestamp:
+
+        st.caption(
+            f"Última atualização GPS: {gps_timestamp}"
         )
 
 else:
 
     st.error(
         """
-        ❌ GPS não disponível
-        
-        Verifique:
-        - GPS do celular ativado
-        - Permissão do navegador
-        - HTTPS habilitado
-        """
+❌ GPS não disponível
+
+Verifique:
+- GPS do celular ativado
+- Permissão do navegador
+- HTTPS habilitado
+"""
     )
 
 # =====================================================
@@ -197,12 +204,12 @@ if not responsavel.strip() or not medicao_fiscal.strip():
 
     st.warning(
         """
-        ⚠️ Preencha:
-        - Responsável
-        - Medição Fiscal
-        
-        antes de adicionar fotos.
-        """
+⚠️ Preencha:
+- Responsável
+- Medição Fiscal
+
+antes de adicionar fotos.
+"""
     )
 
     st.stop()
@@ -213,7 +220,7 @@ if not responsavel.strip() or not medicao_fiscal.strip():
 
 st.divider()
 
-st.subheader("Capturar Foto")
+st.subheader("📸 Capturar Foto")
 
 foto = st.camera_input(
     "Tire uma foto",
@@ -226,11 +233,11 @@ foto = st.camera_input(
 
 if foto:
 
-    imagem = Image.open(foto)
+    imagem = Image.open(foto).convert("RGB")
 
     st.image(
         imagem,
-        use_container_width=True
+        width=350
     )
 
     st.divider()
@@ -252,7 +259,7 @@ if foto:
 
     maps_link = None
 
-    if latitude and longitude:
+    if latitude is not None and longitude is not None:
 
         maps_link = (
             f"https://www.google.com/maps?q="
@@ -263,10 +270,23 @@ if foto:
             "📍 Coordenada vinculada"
         )
 
+        st.write(f"Latitude: {latitude}")
+        st.write(f"Longitude: {longitude}")
+
+        if precisao is not None:
+
+            st.write(
+                f"Precisão: ±{round(float(precisao),1)} m"
+            )
+
+        if gps_timestamp:
+
+            st.caption(
+                f"GPS capturado em: {gps_timestamp}"
+            )
+
         st.markdown(
-            f"""
-            [🌎 Abrir no Google Maps]({maps_link})
-            """
+            f"[🌎 Abrir no Google Maps]({maps_link})"
         )
 
     else:
@@ -319,8 +339,8 @@ if foto:
                     "longitude": longitude,
 
                     "precisao": precisao,
-                    
-                    "gps_timestamp": gps.get("timestamp"),
+
+                    "gps_timestamp": gps_timestamp,
 
                     "maps_link": maps_link,
 
@@ -336,10 +356,6 @@ if foto:
                 st.success(
                     "📸 Foto adicionada!"
                 )
-
-                # =====================================
-                # LIMPA CAMERA AUTOMATICAMENTE
-                # =====================================
 
                 st.session_state.camera_key += 1
 
@@ -385,41 +401,54 @@ if st.session_state.registros:
 
             st.image(
                 reg["imagem"],
-                use_container_width=True
+                width=350
             )
 
             st.write(
                 f"🕒 {reg['data_hora']}"
             )
 
-            if reg["descricao"]:
+            descricao = reg.get("descricao", "")
+
+            if descricao:
 
                 st.write(
-                    f"📝 {reg['descricao']}"
+                    f"📝 {descricao}"
                 )
 
-            if reg["latitude"]:
+            latitude_reg = reg.get("latitude")
+            longitude_reg = reg.get("longitude")
 
-                st.write(f"📍 Latitude: {reg['latitude']}")
-                st.write(f"📍 Longitude: {reg['longitude']}")
-                
-                if reg.get("precisao"):
-                
+            if (
+                latitude_reg is not None
+                and longitude_reg is not None
+            ):
+
+                st.write(
+                    f"📍 Latitude: {latitude_reg}"
+                )
+
+                st.write(
+                    f"📍 Longitude: {longitude_reg}"
+                )
+
+                if reg.get("precisao") is not None:
+
                     st.write(
-                        f"🎯 Precisão: ±{round(reg['precisao'],1)} m"
+                        f"🎯 Precisão: ±{round(float(reg['precisao']),1)} m"
                     )
-                
+
                 if reg.get("gps_timestamp"):
-                
+
                     st.caption(
                         f"🕒 GPS capturado em: {reg['gps_timestamp']}"
                     )
-                
-                st.markdown(
-                    f"""
-                    [🌎 Abrir localização]({reg['maps_link']})
-                    """
-                )
+
+                if reg.get("maps_link"):
+
+                    st.markdown(
+                        f"[🌎 Abrir localização]({reg['maps_link']})"
+                    )
 
             else:
 
@@ -452,25 +481,27 @@ def gerar_excel(registros):
 
         {
 
-            "ID": r["id"],
+            "ID": r.get("id"),
 
-            "Responsável": r["responsavel"],
+            "Responsável": r.get("responsavel"),
 
-            "Medição Fiscal": r["medicao_fiscal"],
+            "Medição Fiscal": r.get("medicao_fiscal"),
 
-            "Apontamento": r["nome_apontamento"],
+            "Apontamento": r.get("nome_apontamento"),
 
-            "Descrição": r["descricao"],
+            "Descrição": r.get("descricao"),
 
-            "Latitude": r["latitude"],
+            "Latitude": r.get("latitude"),
 
-            "Longitude": r["longitude"],
+            "Longitude": r.get("longitude"),
 
-            "Precisão": r["precisao"],
+            "Precisão": r.get("precisao"),
 
-            "Google Maps": r["maps_link"],
+            "GPS Timestamp": r.get("gps_timestamp"),
 
-            "Data": r["data_hora"]
+            "Google Maps": r.get("maps_link"),
+
+            "Data": r.get("data_hora")
 
         }
 
@@ -526,14 +557,14 @@ def gerar_pdf(registros):
 
     elementos.append(
         Paragraph(
-            f"<b>Responsável:</b> {registros[0]['responsavel']}",
+            f"<b>Responsável:</b> {registros[0].get('responsavel', '')}",
             styles["Normal"]
         )
     )
 
     elementos.append(
         Paragraph(
-            f"<b>Medição Fiscal:</b> {registros[0]['medicao_fiscal']}",
+            f"<b>Medição Fiscal:</b> {registros[0].get('medicao_fiscal', '')}",
             styles["Normal"]
         )
     )
@@ -550,14 +581,14 @@ def gerar_pdf(registros):
 
         elementos.append(
             Paragraph(
-                f"<b>{reg['nome_apontamento']}</b>",
+                f"<b>{reg.get('nome_apontamento', '')}</b>",
                 styles["Heading2"]
             )
         )
 
         elementos.append(
             Paragraph(
-                reg["data_hora"],
+                str(reg.get("data_hora", "")),
                 styles["Normal"]
             )
         )
@@ -580,9 +611,11 @@ def gerar_pdf(registros):
 
         img = RLImage(
             caminho,
-            width=350,
-            height=260
+            width=400,
+            height=300
         )
+
+        img.hAlign = "CENTER"
 
         elementos.append(img)
 
@@ -590,65 +623,89 @@ def gerar_pdf(registros):
             Spacer(1, 10)
         )
 
-        if reg["descricao"]:
+        descricao = reg.get("descricao", "")
+
+        if descricao:
 
             elementos.append(
                 Paragraph(
-                    f"Descrição: {reg['descricao']}",
+                    f"<b>Descrição:</b> {descricao}",
                     styles["Normal"]
                 )
             )
 
-        if reg["latitude"] and reg["longitude"]:
-    
+        latitude_reg = reg.get("latitude")
+        longitude_reg = reg.get("longitude")
+
+        if (
+            latitude_reg is not None
+            and longitude_reg is not None
+        ):
+
             elementos.append(
                 Paragraph(
-                    f"<b>Latitude:</b> {reg['latitude']}",
+                    f"<b>Latitude:</b> {latitude_reg}",
                     styles["Normal"]
                 )
             )
-        
+
             elementos.append(
                 Paragraph(
-                    f"<b>Longitude:</b> {reg['longitude']}",
+                    f"<b>Longitude:</b> {longitude_reg}",
                     styles["Normal"]
                 )
             )
-        
-            if reg.get("precisao"):
-        
+
+            if reg.get("precisao") is not None:
+
                 elementos.append(
                     Paragraph(
-                        f"<b>Precisão:</b> ±{round(reg['precisao'], 1)} metros",
-                        styles["Normal"]
-                    ),
-                    Paragraph(
-                       f"GPS capturado em: {reg['gps_timestamp']}",
+                        f"<b>Precisão:</b> ±{round(float(reg['precisao']),1)} metros",
                         styles["Normal"]
                     )
                 )
-        
-            link = (
-                f'<link href="{reg["maps_link"]}">'
-                f'Abrir localização no Google Maps'
-                f'</link>'
+
+            gps_timestamp_reg = reg.get(
+                "gps_timestamp",
+                "Não disponível"
             )
-        
+
             elementos.append(
                 Paragraph(
-                    link,
+                    f"<b>GPS capturado em:</b> {gps_timestamp_reg}",
                     styles["Normal"]
                 )
             )
-        
+
+            maps_link_reg = reg.get("maps_link")
+
+            if maps_link_reg:
+
+                link = (
+                    f'<link href="{maps_link_reg}">'
+                    f'Abrir localização no Google Maps'
+                    f'</link>'
+                )
+
+                elementos.append(
+                    Paragraph(
+                        link,
+                        styles["Normal"]
+                    )
+                )
+
         else:
-        
+
             elementos.append(
                 Paragraph(
                     "Sem coordenadas GPS",
                     styles["Normal"]
                 )
             )
+
+        elementos.append(
+            Spacer(1, 25)
+        )
 
     doc.build(elementos)
 
@@ -664,7 +721,7 @@ if st.session_state.registros:
 
     st.subheader("📥 Exportar Relatório")
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
 
@@ -677,7 +734,7 @@ if st.session_state.registros:
             ),
 
             file_name=(
-                f"relatorio_"
+                f"{medicao_fiscal}_"
                 f"{datetime.now().strftime('%d-%m-%Y')}.xlsx"
             ),
 
@@ -698,12 +755,22 @@ if st.session_state.registros:
             ),
 
             file_name=(
-                f"relatorio_"
+                f"{medicao_fiscal}_"
                 f"{datetime.now().strftime('%d-%m-%Y')}.pdf"
             ),
 
             mime="application/pdf"
         )
+
+    with col3:
+
+        if st.button(
+            "🗑 Limpar Relatório"
+        ):
+
+            st.session_state.registros = []
+
+            st.rerun()
 
 # =====================================================
 # FOOTER
@@ -711,14 +778,6 @@ if st.session_state.registros:
 
 st.divider()
 
-for reg in st.session_state.registros:
-
-    st.image(reg["imagem"])
-
-    st.caption(
-        f"""
-📍 GPS contínuo via watchPosition()
-
-GPS capturado em: {reg['gps_timestamp']}
-"""
+st.caption(
+    "📍 GPS contínuo via watchPosition()"
 )
