@@ -23,13 +23,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import cm
 
-# JavaScript Execution
-try:
-    from streamlit_js_eval import streamlit_js_eval
-    HAS_JS_EVAL = True
-except ImportError:
-    HAS_JS_EVAL = False
-
 # ==========================================
 # CONFIG
 # ==========================================
@@ -54,19 +47,26 @@ st.markdown("""
         padding: 15px;
         margin: 10px 0;
     }
-    .gps-box {
-        background-color: #e3f2fd;
-        border-left: 4px solid #1976d2;
+    .gps-box-success {
+        background-color: #d4edda;
+        border-left: 4px solid #28a745;
         padding: 15px;
         border-radius: 5px;
         margin: 10px 0;
     }
-    .success-box {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        color: #155724;
+    .gps-box-warning {
+        background-color: #fff3cd;
+        border-left: 4px solid #ffc107;
         padding: 15px;
         border-radius: 5px;
+        margin: 10px 0;
+    }
+    .gps-box-error {
+        background-color: #f8d7da;
+        border-left: 4px solid #dc3545;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 10px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -86,49 +86,108 @@ if "filtro_tag" not in st.session_state:
 if "modo_visualizacao" not in st.session_state:
     st.session_state.modo_visualizacao = "Grade"
 
-if "gps_capturado" not in st.session_state:
-    st.session_state.gps_capturado = None
+if "gps_manual" not in st.session_state:
+    st.session_state.gps_manual = {"lat": None, "lon": None, "source": None}
 
 if "foto_atual" not in st.session_state:
     st.session_state.foto_atual = None
 
 # ==========================================
-# FUNÇÃO: CAPTURAR GPS COM JAVASCRIPT
+# FUNÇÃO: CAPTURAR GPS VIA JAVASCRIPT
 # ==========================================
 
-def capturar_gps_js():
-    """Captura GPS usando JavaScript no navegador"""
-    if not HAS_JS_EVAL:
-        return None
+def capturar_gps_html():
+    """Captura GPS usando HTML5 Geolocation API"""
+    gps_html = """
+    <div id="gps-container" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin: 10px 0;">
+        <button id="gps-btn" onclick="captureGPS()" style="
+            padding: 10px 20px;
+            background-color: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        ">🌍 Capturar GPS Agora</button>
+        <div id="gps-status" style="margin-top: 10px; display: none;"></div>
+    </div>
     
-    try:
-        js_code = """
-        new Promise((resolve) => {
-            if (!navigator.geolocation) {
-                resolve({error: "Geolocalização não suportada"});
-            } else {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        resolve({
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude,
-                            accuracy: position.coords.accuracy,
-                            timestamp: new Date().toISOString()
-                        });
-                    },
-                    (error) => {
-                        resolve({error: error.message});
-                    },
-                    {timeout: 10000, maximumAge: 0, enableHighAccuracy: true}
-                );
+    <script>
+    function captureGPS() {
+        const btn = document.getElementById('gps-btn');
+        const status = document.getElementById('gps-status');
+        
+        btn.disabled = true;
+        btn.textContent = '⏳ Capturando...';
+        status.style.display = 'block';
+        status.innerHTML = '<p style="color: #1976d2;">Solicitando acesso ao GPS do seu dispositivo...</p>';
+        
+        if (!navigator.geolocation) {
+            status.innerHTML = '<p style="color: #dc3545;">❌ Geolocalização não suportada pelo navegador</p>';
+            btn.disabled = false;
+            btn.textContent = '🌍 Capturar GPS Novamente';
+            return;
+        }
+        
+        const options = {
+            enableHighAccuracy: true,
+            timeout: 30000,
+            maximumAge: 0
+        };
+        
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                const lat = position.coords.latitude.toFixed(8);
+                const lon = position.coords.longitude.toFixed(8);
+                const acc = position.coords.accuracy.toFixed(2);
+                
+                status.innerHTML = `
+                    <div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 10px; border-radius: 5px;">
+                        <p style="color: #155724; margin: 0;"><strong>✅ GPS Capturado com Sucesso!</strong></p>
+                        <p style="color: #155724; margin: 5px 0;">Latitude: ${lat}°</p>
+                        <p style="color: #155724; margin: 5px 0;">Longitude: ${lon}°</p>
+                        <p style="color: #155724; margin: 5px 0;">Precisão: ±${acc} metros</p>
+                    </div>
+                `;
+                
+                // Enviar dados para Streamlit
+                window.parent.postMessage({
+                    type: 'streamlit:setComponentValue',
+                    value: {
+                        latitude: parseFloat(lat),
+                        longitude: parseFloat(lon),
+                        accuracy: parseFloat(acc),
+                        timestamp: new Date().toISOString(),
+                        source: 'gps_html5'
+                    }
+                }, '*');
+                
+                btn.textContent = '✅ GPS Capturado';
+                btn.style.backgroundColor = '#28a745';
+            },
+            function(error) {
+                let errorMsg = '';
+                
+                if (error.code === error.PERMISSION_DENIED) {
+                    errorMsg = '❌ Permissão negada. Verifique as configurações de privacidade do navegador.';
+                } else if (error.code === error.POSITION_UNAVAILABLE) {
+                    errorMsg = '⚠️ Informação de localização não disponível (você pode estar em local sem sinal).';
+                } else if (error.code === error.TIMEOUT) {
+                    errorMsg = '⏱️ Timeout ao capturar GPS. Tente novamente.';
+                } else {
+                    errorMsg = `❌ Erro: ${error.message}`;
+                }
+                
+                status.innerHTML = `<p style="color: #dc3545;">${errorMsg}</p>`;
+                btn.disabled = false;
+                btn.textContent = '🔄 Tentar Novamente';
             }
-        });
-        """
-        resultado = streamlit_js_eval(js_string=js_code, want_output=True)
-        return resultado
-    except Exception as e:
-        st.error(f"❌ Erro ao capturar GPS: {str(e)}")
-        return None
+        );
+    }
+    </script>
+    """
+    return gps_html
 
 # ==========================================
 # SIDEBAR - CONFIGURAÇÕES
@@ -139,19 +198,21 @@ with st.sidebar:
     
     modo_captura = st.radio(
         "📷 Modo de Captura",
-        ["📸 Câmera + GPS", "📁 Upload Manual", "⚙️ Avançado"]
+        ["📸 Câmera", "📁 Upload", "🗺️ Coordenadas Manuais"]
     )
     
     st.divider()
     
     # Estatísticas
     st.subheader("📊 Estatísticas")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total de Fotos", len(st.session_state.registros))
+        st.metric("Total", len(st.session_state.registros))
     with col2:
         fotos_com_gps = sum(1 for r in st.session_state.registros if r.get("latitude"))
         st.metric("Com GPS", fotos_com_gps)
+    with col3:
+        st.metric("Sem GPS", len(st.session_state.registros) - fotos_com_gps)
     
     st.divider()
     
@@ -164,7 +225,8 @@ with st.sidebar:
     tags_filtro = ["Todos"] + sorted(list(todas_tags))
     st.session_state.filtro_tag = st.selectbox(
         "Selecione uma tag",
-        tags_filtro
+        tags_filtro,
+        key="filtro_tag_select"
     )
     
     st.divider()
@@ -178,58 +240,53 @@ with st.sidebar:
     
     st.divider()
     
-    # Informações
-    with st.expander("ℹ️ Sobre GPS"):
-        st.write("""
-        **Captura de GPS:**
-        - 🎯 Ativa apenas após tirar a foto
-        - ⏱️ Aguarda confirmação do navegador
-        - 🔄 Máx 10 segundos de espera
-        - ✅ Coordenadas capturadas no momento exato
-        """)
-    
-    st.divider()
-    
     # Limpar dados
     if st.button("🗑️ Limpar Todos os Dados", type="secondary"):
         st.session_state.registros = []
+        st.session_state.gps_manual = {"lat": None, "lon": None, "source": None}
         st.success("Dados limpos!")
         st.rerun()
 
 # ==========================================
-# MODO 1: CÂMERA + GPS INTELIGENTE
+# MODO 1: CÂMERA
 # ==========================================
 
-if modo_captura == "📸 Câmera + GPS":
+if modo_captura == "📸 Câmera":
     
-    st.subheader("📸 Captura via Câmera com GPS Automático")
-    st.info("💡 A captura de GPS acontece após você tirar a foto para máxima precisão")
+    st.subheader("📸 Captura via Câmera")
+    st.info("💡 Você pode capturar GPS após tirar a foto, mas não é obrigatório para salvar o apontamento")
     
-    col_cam, col_status = st.columns([2, 1])
+    col_cam, col_gps = st.columns([2, 1])
     
     with col_cam:
-        foto = st.camera_input("Tire uma foto")
+        foto = st.camera_input("Tire uma foto", key="camera_input")
     
-    with col_status:
-        st.subheader("📡 Status GPS")
-        if st.session_state.gps_capturado:
-            lat = st.session_state.gps_capturado.get("latitude")
-            lon = st.session_state.gps_capturado.get("longitude")
-            acc = st.session_state.gps_capturado.get("accuracy")
+    with col_gps:
+        st.subheader("📡 GPS")
+        
+        # Exibir status do GPS
+        if st.session_state.gps_manual["lat"] is not None:
+            st.markdown(f"""
+            <div class='gps-box-success'>
+            <strong>✅ GPS Capturado!</strong><br>
+            Lat: {st.session_state.gps_manual['lat']:.6f}°<br>
+            Lon: {st.session_state.gps_manual['lon']:.6f}°<br>
+            <small>Fonte: {st.session_state.gps_manual['source']}</small>
+            </div>
+            """, unsafe_allow_html=True)
             
-            if lat and lon:
-                st.markdown(f"""
-                <div class='gps-box'>
-                <b>✅ Localização Capturada!</b><br>
-                Lat: {lat:.6f}<br>
-                Lon: {lon:.6f}<br>
-                Precisão: ±{acc:.1f}m
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.error(f"❌ {st.session_state.gps_capturado.get('error', 'Erro desconhecido')}")
+            if st.button("🔄 Recapturar GPS"):
+                st.session_state.gps_manual = {"lat": None, "lon": None, "source": None}
+                st.rerun()
         else:
-            st.warning("⏳ GPS não capturado ainda")
+            st.markdown("""
+            <div class='gps-box-warning'>
+            <strong>⚠️ GPS não capturado</strong><br>
+            Clique no botão abaixo para tentar capturar
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.components.v1.html(capturar_gps_html(), height=250)
     
     # PROCESSAMENTO DA FOTO
     if foto is not None:
@@ -237,7 +294,7 @@ if modo_captura == "📸 Câmera + GPS":
             imagem = Image.open(foto)
             st.session_state.foto_atual = imagem.copy()
             
-            st.subheader("🖼️ Pré-visualização e Detalhes")
+            st.subheader("🖼️ Pré-visualização")
             
             col_img, col_info = st.columns([2, 1])
             
@@ -245,25 +302,12 @@ if modo_captura == "📸 Câmera + GPS":
                 st.image(imagem, use_container_width=True)
             
             with col_info:
-                st.write("**Informações da Foto:**")
+                st.write("**Informações:**")
                 try:
-                    st.write(f"🔍 Tamanho: {imagem.size[0]}x{imagem.size[1]}px")
-                    st.write(f"📋 Formato: {imagem.format if imagem.format else 'Desconhecido'}")
+                    st.write(f"Tamanho: {imagem.size[0]}x{imagem.size[1]}px")
+                    st.write(f"Formato: {imagem.format if imagem.format else 'Desconhecido'}")
                 except Exception as e:
-                    st.write(f"ℹ️ Erro: {str(e)}")
-                
-                # CAPTURAR GPS AGORA
-                if st.button("🌍 Capturar GPS Agora", type="primary"):
-                    with st.spinner("⏳ Solicitando acesso ao GPS..."):
-                        gps_data = capturar_gps_js()
-                        if gps_data and "latitude" in gps_data:
-                            st.session_state.gps_capturado = gps_data
-                            st.success("✅ GPS capturado com sucesso!")
-                            st.rerun()
-                        elif gps_data and "error" in gps_data:
-                            st.error(f"❌ Erro: {gps_data['error']}")
-                        else:
-                            st.warning("⚠️ Não foi possível capturar GPS")
+                    st.write(f"Erro: {str(e)}")
             
             # FORMULÁRIO DE DETALHES
             st.divider()
@@ -274,33 +318,36 @@ if modo_captura == "📸 Câmera + GPS":
             with col1:
                 nome_apontamento = st.text_input(
                     "Nome do Apontamento",
-                    value=f"Apontamento {len(st.session_state.registros)+1}"
+                    value=f"Apontamento {len(st.session_state.registros)+1}",
+                    key="cam_nome"
                 )
             
             with col2:
                 categorias = ["Inspeção", "Reparo", "Manutenção", "Documentação", "Outro"]
-                categoria = st.selectbox("Categoria", categorias)
+                categoria = st.selectbox("Categoria", categorias, key="cam_cat")
             
             with col3:
-                prioridade = st.selectbox("Prioridade", ["Baixa", "Média", "Alta"])
+                prioridade = st.selectbox("Prioridade", ["Baixa", "Média", "Alta"], key="cam_pri")
             
             # Tags
             tags_input = st.text_input(
                 "Tags (separadas por vírgula)",
-                placeholder="ex: urgente, área-externa, risco"
+                placeholder="ex: urgente, área-externa",
+                key="cam_tags"
             )
             tags = [tag.strip() for tag in tags_input.split(",") if tag.strip()]
             
             # Descrição
             descricao = st.text_area(
                 "Descrição adicional",
-                placeholder="Adicione observações, problemas encontrados, etc...",
-                height=100
+                placeholder="Observações, problemas encontrados, etc...",
+                height=100,
+                key="cam_desc"
             )
             
             # Responsável
             st.subheader("✋ Responsável")
-            responsavel = st.text_input("Nome do Responsável", placeholder="Seu nome")
+            responsavel = st.text_input("Nome do Responsável", placeholder="Seu nome", key="cam_resp")
             
             # ==========================================
             # CONFIRMAR E SALVAR
@@ -309,14 +356,10 @@ if modo_captura == "📸 Câmera + GPS":
             col_btn1, col_btn2, col_btn3 = st.columns(3)
             
             with col_btn1:
-                if st.button("✅ Adicionar ao Relatório", type="primary"):
+                if st.button("✅ Salvar ao Relatório", type="primary", key="cam_save"):
                     
                     if not responsavel.strip():
                         st.error("❌ Por favor, insira o nome do responsável")
-                    elif not st.session_state.gps_capturado:
-                        st.error("❌ Por favor, capture o GPS primeiro")
-                    elif "error" in st.session_state.gps_capturado:
-                        st.error(f"❌ GPS inválido: {st.session_state.gps_capturado['error']}")
                     else:
                         try:
                             data_hora = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
@@ -326,11 +369,12 @@ if modo_captura == "📸 Câmera + GPS":
                                 f"{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}"
                             )
                             
-                            latitude = st.session_state.gps_capturado.get("latitude")
-                            longitude = st.session_state.gps_capturado.get("longitude")
-                            accuracy = st.session_state.gps_capturado.get("accuracy", 0)
+                            latitude = st.session_state.gps_manual["lat"]
+                            longitude = st.session_state.gps_manual["lon"]
                             
-                            maps_link = f"https://www.google.com/maps?q={latitude},{longitude}"
+                            maps_link = None
+                            if latitude is not None and longitude is not None:
+                                maps_link = f"https://www.google.com/maps?q={latitude},{longitude}"
                             
                             registro = {
                                 "id": len(st.session_state.registros),
@@ -339,7 +383,6 @@ if modo_captura == "📸 Câmera + GPS":
                                 "imagem": st.session_state.foto_atual.copy(),
                                 "latitude": latitude,
                                 "longitude": longitude,
-                                "accuracy": accuracy,
                                 "maps_link": maps_link,
                                 "data_hora": data_hora,
                                 "categoria": categoria,
@@ -347,11 +390,11 @@ if modo_captura == "📸 Câmera + GPS":
                                 "tags": tags,
                                 "descricao": descricao,
                                 "responsavel": responsavel,
-                                "gps_timestamp": st.session_state.gps_capturado.get("timestamp")
+                                "gps_source": st.session_state.gps_manual.get("source")
                             }
                             
                             st.session_state.registros.append(registro)
-                            st.session_state.gps_capturado = None
+                            st.session_state.gps_manual = {"lat": None, "lon": None, "source": None}
                             st.session_state.foto_atual = None
                             
                             st.success("✅ Apontamento salvo com sucesso!")
@@ -361,15 +404,14 @@ if modo_captura == "📸 Câmera + GPS":
                             st.error(f"❌ Erro ao salvar: {str(e)}")
             
             with col_btn2:
-                if st.button("🔄 Tirar Outra Foto", type="secondary"):
-                    st.session_state.gps_capturado = None
+                if st.button("🔄 Outra Foto", type="secondary", key="cam_other"):
+                    st.session_state.gps_manual = {"lat": None, "lon": None, "source": None}
                     st.session_state.foto_atual = None
-                    st.info("📸 Câmera reiniciada")
                     st.rerun()
             
             with col_btn3:
-                if st.button("❌ Descartar", type="secondary"):
-                    st.session_state.gps_capturado = None
+                if st.button("❌ Descartar", type="secondary", key="cam_discard"):
+                    st.session_state.gps_manual = {"lat": None, "lon": None, "source": None}
                     st.session_state.foto_atual = None
                     st.rerun()
         
@@ -377,111 +419,105 @@ if modo_captura == "📸 Câmera + GPS":
             st.error(f"❌ Erro ao processar imagem: {str(e)}")
 
 # ==========================================
-# MODO 2: UPLOAD MANUAL
+# MODO 2: UPLOAD
 # ==========================================
 
-elif modo_captura == "📁 Upload Manual":
+elif modo_captura == "📁 Upload":
     
-    st.subheader("📁 Upload Manual com GPS")
+    st.subheader("📁 Upload de Arquivo")
     
-    col_upload, col_geo = st.columns([2, 1])
+    col_upload, col_gps = st.columns([2, 1])
     
     with col_upload:
         foto = st.file_uploader(
             "Selecione uma foto",
-            type=["jpg", "jpeg", "png", "webp"]
+            type=["jpg", "jpeg", "png", "webp"],
+            key="upload_input"
         )
     
-    with col_geo:
-        st.subheader("📡 Localização")
-        entrada_gps = st.radio("Forma de entrada:", ["Manual", "Capturar GPS"])
+    with col_gps:
+        st.subheader("📡 GPS")
         
-        if entrada_gps == "Manual":
-            latitude = st.number_input("Latitude", value=0.0, format="%.6f")
-            longitude = st.number_input("Longitude", value=0.0, format="%.6f")
-            usar_gps = latitude != 0.0 and longitude != 0.0
+        if st.session_state.gps_manual["lat"] is not None:
+            st.markdown(f"""
+            <div class='gps-box-success'>
+            <strong>✅ GPS Definido!</strong><br>
+            Lat: {st.session_state.gps_manual['lat']:.6f}°<br>
+            Lon: {st.session_state.gps_manual['lon']:.6f}°<br>
+            <small>Fonte: {st.session_state.gps_manual['source']}</small>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button("🔄 Alterar GPS"):
+                st.session_state.gps_manual = {"lat": None, "lon": None, "source": None}
+                st.rerun()
         else:
-            if st.button("🌍 Capturar GPS do Navegador"):
-                with st.spinner("⏳ Capturando GPS..."):
-                    gps_data = capturar_gps_js()
-                    if gps_data and "latitude" in gps_data:
-                        latitude = gps_data["latitude"]
-                        longitude = gps_data["longitude"]
-                        st.success(f"✅ GPS: {latitude:.6f}, {longitude:.6f}")
-                        usar_gps = True
-                    else:
-                        st.error("❌ Erro ao capturar GPS")
-                        latitude = 0.0
-                        longitude = 0.0
-                        usar_gps = False
-            else:
-                latitude = 0.0
-                longitude = 0.0
-                usar_gps = False
+            st.markdown("""
+            <div class='gps-box-warning'>
+            <strong>⚠️ GPS não definido</strong><br>
+            Clique para capturar ou insira manualmente
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.components.v1.html(capturar_gps_html(), height=200)
     
-    if foto and usar_gps if entrada_gps == "Manual" else True:
+    if foto is not None:
         try:
             imagem = Image.open(foto)
+            st.session_state.foto_atual = imagem.copy()
             
             st.subheader("🖼️ Pré-visualização")
             st.image(imagem, use_container_width=True)
             
             # FORMULÁRIO
             st.divider()
-            st.subheader("✍️ Detalhes do Apontamento")
+            st.subheader("✍️ Detalhes")
             
             col1, col2, col3 = st.columns(3)
             
             with col1:
                 nome_apontamento = st.text_input(
-                    "Nome do Apontamento",
-                    value=f"Apontamento {len(st.session_state.registros)+1}"
+                    "Apontamento",
+                    value=f"Apontamento {len(st.session_state.registros)+1}",
+                    key="upl_nome"
                 )
             
             with col2:
-                categorias = ["Inspeção", "Reparo", "Manutenção", "Documentação", "Outro"]
-                categoria = st.selectbox("Categoria", categorias)
+                categoria = st.selectbox("Categoria", 
+                    ["Inspeção", "Reparo", "Manutenção", "Documentação", "Outro"],
+                    key="upl_cat"
+                )
             
             with col3:
-                prioridade = st.selectbox("Prioridade", ["Baixa", "Média", "Alta"])
+                prioridade = st.selectbox("Prioridade", ["Baixa", "Média", "Alta"], key="upl_pri")
             
-            tags_input = st.text_input("Tags (separadas por vírgula)")
+            tags_input = st.text_input("Tags", key="upl_tags")
             tags = [tag.strip() for tag in tags_input.split(",") if tag.strip()]
             
-            descricao = st.text_area("Descrição adicional", height=100)
-            responsavel = st.text_input("Nome do Responsável")
+            descricao = st.text_area("Descrição", height=100, key="upl_desc")
+            responsavel = st.text_input("Responsável", key="upl_resp")
             
-            if st.button("✅ Salvar Apontamento", type="primary"):
+            if st.button("✅ Salvar Apontamento", type="primary", key="upl_save"):
                 if not responsavel.strip():
                     st.error("❌ Insira o responsável")
                 else:
                     try:
                         data_hora = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-                        nome_arquivo = (
-                            f"{nome_apontamento.replace(' ', '_')}_"
-                            f"{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}"
-                        )
                         
-                        if entrada_gps == "Manual":
-                            lat_final = latitude if latitude != 0.0 else None
-                            lon_final = longitude if longitude != 0.0 else None
-                        else:
-                            lat_final = latitude
-                            lon_final = longitude
+                        latitude = st.session_state.gps_manual["lat"]
+                        longitude = st.session_state.gps_manual["lon"]
                         
-                        maps_link = (
-                            f"https://www.google.com/maps?q={lat_final},{lon_final}"
-                            if lat_final and lon_final else None
-                        )
+                        maps_link = None
+                        if latitude is not None and longitude is not None:
+                            maps_link = f"https://www.google.com/maps?q={latitude},{longitude}"
                         
                         registro = {
                             "id": len(st.session_state.registros),
                             "apontamento": nome_apontamento,
-                            "nome_arquivo": nome_arquivo,
-                            "imagem": imagem.copy(),
-                            "latitude": lat_final,
-                            "longitude": lon_final,
-                            "accuracy": None,
+                            "nome_arquivo": f"{nome_apontamento}_{data_hora}".replace(" ", "_").replace(":", "-"),
+                            "imagem": st.session_state.foto_atual.copy(),
+                            "latitude": latitude,
+                            "longitude": longitude,
                             "maps_link": maps_link,
                             "data_hora": data_hora,
                             "categoria": categoria,
@@ -489,89 +525,139 @@ elif modo_captura == "📁 Upload Manual":
                             "tags": tags,
                             "descricao": descricao,
                             "responsavel": responsavel,
-                            "gps_timestamp": None
+                            "gps_source": st.session_state.gps_manual.get("source")
                         }
                         
                         st.session_state.registros.append(registro)
-                        st.success("✅ Apontamento salvo!")
+                        st.session_state.gps_manual = {"lat": None, "lon": None, "source": None}
+                        st.session_state.foto_atual = None
+                        
+                        st.success("✅ Salvo!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"❌ Erro: {str(e)}")
         
         except Exception as e:
-            st.error(f"❌ Erro ao processar: {str(e)}")
+            st.error(f"❌ Erro: {str(e)}")
 
 # ==========================================
-# MODO 3: AVANÇADO
+# MODO 3: COORDENADAS MANUAIS
 # ==========================================
 
 else:
-    st.subheader("⚙️ Modo Avançado")
     
-    tab1, tab2 = st.tabs(["📸 Câmera", "📁 Upload"])
+    st.subheader("🗺️ Inserir Coordenadas Manualmente")
     
-    with tab1:
-        st.write("Câmera com todas as opções")
-        foto = st.camera_input("Câmera")
+    col_coords, col_info = st.columns([2, 1])
+    
+    with col_coords:
+        st.write("**Digite as coordenadas:**")
+        col_lat, col_lon = st.columns(2)
         
-        if foto:
-            imagem = Image.open(foto)
-            st.image(imagem, use_container_width=True)
-            
-            col_gps, col_manual = st.columns(2)
-            
-            with col_gps:
-                if st.button("🌍 Capturar GPS Automático"):
-                    with st.spinner("⏳ Capturando..."):
-                        gps_data = capturar_gps_js()
-                        if gps_data and "latitude" in gps_data:
-                            st.session_state.gps_capturado = gps_data
-                            st.success("✅ GPS capturado!")
-                        else:
-                            st.error("❌ Erro ao capturar")
-            
-            with col_manual:
-                if st.button("📍 Entrada Manual de GPS"):
-                    st.session_state.gps_capturado = None
-            
-            # Rest of advanced form...
-            nome_apontamento = st.text_input("Apontamento")
-            categoria = st.selectbox("Categoria", ["Inspeção", "Reparo", "Manutenção", "Documentação", "Outro"])
-            prioridade = st.selectbox("Prioridade", ["Baixa", "Média", "Alta"])
-            tags_input = st.text_input("Tags")
-            descricao = st.text_area("Descrição")
-            responsavel = st.text_input("Responsável")
-            
-            if st.button("✅ Salvar"):
-                if responsavel and st.session_state.gps_capturado:
-                    tags = [tag.strip() for tag in tags_input.split(",") if tag.strip()]
+        with col_lat:
+            latitude = st.number_input(
+                "Latitude",
+                value=st.session_state.gps_manual["lat"] if st.session_state.gps_manual["lat"] else 0.0,
+                format="%.8f",
+                key="manual_lat"
+            )
+        
+        with col_lon:
+            longitude = st.number_input(
+                "Longitude",
+                value=st.session_state.gps_manual["lon"] if st.session_state.gps_manual["lon"] else 0.0,
+                format="%.8f",
+                key="manual_lon"
+            )
+        
+        if st.button("✅ Confirmar Coordenadas"):
+            st.session_state.gps_manual = {
+                "lat": latitude if latitude != 0.0 else None,
+                "lon": longitude if longitude != 0.0 else None,
+                "source": "Entrada Manual"
+            }
+            st.success("✅ Coordenadas definidas!")
+    
+    with col_info:
+        if st.session_state.gps_manual["lat"] is not None:
+            st.markdown(f"""
+            <div class='gps-box-success'>
+            ✅ Coordenadas Confirmadas<br>
+            {st.session_state.gps_manual['lat']:.6f}°<br>
+            {st.session_state.gps_manual['lon']:.6f}°
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class='gps-box-warning'>
+            ⚠️ Aguardando coordenadas
+            </div>
+            """, unsafe_allow_html=True)
+    
+    st.divider()
+    
+    # Upload da foto
+    st.subheader("📸 Foto")
+    foto = st.file_uploader("Selecione uma foto", type=["jpg", "jpeg", "png", "webp"], key="manual_upload")
+    
+    if foto:
+        imagem = Image.open(foto)
+        st.image(imagem, use_container_width=True)
+        
+        st.divider()
+        
+        # Formulário
+        st.subheader("✍️ Detalhes")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            nome = st.text_input("Apontamento", key="man_nome")
+        with col2:
+            categoria = st.selectbox("Categoria", ["Inspeção", "Reparo", "Manutenção", "Documentação", "Outro"], key="man_cat")
+        with col3:
+            prioridade = st.selectbox("Prioridade", ["Baixa", "Média", "Alta"], key="man_pri")
+        
+        tags_input = st.text_input("Tags", key="man_tags")
+        tags = [t.strip() for t in tags_input.split(",") if t.strip()]
+        
+        descricao = st.text_area("Descrição", height=100, key="man_desc")
+        responsavel = st.text_input("Responsável", key="man_resp")
+        
+        if st.button("✅ Salvar", type="primary", key="man_save"):
+            if not responsavel:
+                st.error("Insira o responsável")
+            else:
+                try:
                     data_hora = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
                     
-                    gps = st.session_state.gps_capturado
-                    lat = gps.get("latitude")
-                    lon = gps.get("longitude")
+                    lat = st.session_state.gps_manual["lat"]
+                    lon = st.session_state.gps_manual["lon"]
+                    
+                    maps_link = f"https://www.google.com/maps?q={lat},{lon}" if lat and lon else None
                     
                     registro = {
                         "id": len(st.session_state.registros),
-                        "apontamento": nome_apontamento,
-                        "nome_arquivo": f"{nome_apontamento}_{data_hora}".replace(" ", "_").replace(":", "-"),
+                        "apontamento": nome,
+                        "nome_arquivo": f"{nome}_{data_hora}".replace(" ", "_").replace(":", "-"),
                         "imagem": imagem.copy(),
                         "latitude": lat,
                         "longitude": lon,
-                        "accuracy": gps.get("accuracy"),
-                        "maps_link": f"https://www.google.com/maps?q={lat},{lon}",
+                        "maps_link": maps_link,
                         "data_hora": data_hora,
                         "categoria": categoria,
                         "prioridade": prioridade,
                         "tags": tags,
                         "descricao": descricao,
                         "responsavel": responsavel,
-                        "gps_timestamp": gps.get("timestamp")
+                        "gps_source": "Entrada Manual"
                     }
                     
                     st.session_state.registros.append(registro)
+                    st.session_state.gps_manual = {"lat": None, "lon": None, "source": None}
                     st.success("✅ Salvo!")
                     st.rerun()
+                except Exception as e:
+                    st.error(f"Erro: {str(e)}")
 
 # ==========================================
 # VISUALIZAÇÃO DO RELATÓRIO
@@ -580,9 +666,8 @@ else:
 if st.session_state.registros:
     
     st.divider()
-    st.subheader("📑 Relatório de Apontamentos")
+    st.subheader("📑 Relatório")
     
-    # FILTRAR
     registros_filtrados = st.session_state.registros
     
     if st.session_state.filtro_tag != "Todos":
@@ -591,7 +676,7 @@ if st.session_state.registros:
             if st.session_state.filtro_tag in r.get("tags", [])
         ]
     
-    st.info(f"📌 Exibindo {len(registros_filtrados)} de {len(st.session_state.registros)} fotos")
+    st.info(f"📌 {len(registros_filtrados)}/{len(st.session_state.registros)} apontamentos")
     
     # GRADE
     if st.session_state.modo_visualizacao == "Grade":
@@ -603,45 +688,52 @@ if st.session_state.registros:
                 try:
                     st.image(reg["imagem"], use_container_width=True)
                 except:
-                    pass
+                    st.write("Imagem não disponível")
                 
                 st.caption(f"👤 {reg.get('responsavel', 'N/A')}")
                 st.caption(f"📅 {reg['data_hora']}")
+                st.caption(f"🏷️ {reg.get('categoria', 'N/A')}")
                 
                 if reg.get("latitude"):
-                    st.caption(f"📍 {reg['latitude']:.4f}, {reg['longitude']:.4f}")
-                    st.caption(f"±{reg.get('accuracy', 'N/A')}m")
+                    st.caption(f"✅ 📍 GPS: {reg['latitude']:.4f}°, {reg['longitude']:.4f}°")
+                else:
+                    st.caption(f"❌ Sem GPS")
                 
                 col_a, col_b = st.columns(2)
                 with col_a:
-                    if st.button("✏️", key=f"e{idx}"):
-                        pass
+                    if st.button("📍 Mapa", key=f"map_{idx}"):
+                        if reg.get("latitude"):
+                            st.write(f"[Abrir no Maps]({reg['maps_link']})")
+                        else:
+                            st.write("Sem GPS")
                 with col_b:
-                    if st.button("🗑️", key=f"d{idx}"):
+                    if st.button("🗑️", key=f"del_{idx}"):
                         st.session_state.registros.pop(idx)
                         st.rerun()
     
     # LISTA
     elif st.session_state.modo_visualizacao == "Lista":
         for idx, reg in enumerate(registros_filtrados):
-            with st.expander(f"📸 {reg['apontamento']} - {reg['responsavel']}"):
+            with st.expander(f"📸 {reg['apontamento']} - {reg.get('responsavel', 'N/A')}"):
                 col1, col2 = st.columns([1, 2])
                 
                 with col1:
                     try:
                         st.image(reg["imagem"], use_container_width=True)
                     except:
-                        pass
+                        st.write("Imagem não disponível")
                 
                 with col2:
                     st.write(f"**Categoria:** {reg.get('categoria', 'N/A')}")
                     st.write(f"**Prioridade:** {reg.get('prioridade', 'N/A')}")
-                    st.write(f"**Data/Hora:** {reg['data_hora']}")
+                    st.write(f"**Data:** {reg['data_hora']}")
                     
                     if reg.get("latitude"):
-                        st.write(f"**Localização:** {reg['latitude']:.6f}, {reg['longitude']:.6f}")
-                        st.write(f"**Precisão GPS:** ±{reg.get('accuracy', 'N/A')}m")
+                        st.write(f"**GPS:** {reg['latitude']:.8f}°, {reg['longitude']:.8f}°")
+                        st.write(f"**Fonte:** {reg.get('gps_source', 'Desconhecida')}")
                         st.markdown(f"[🌎 Google Maps]({reg['maps_link']})")
+                    else:
+                        st.write("**GPS:** Não capturado")
                     
                     if reg.get("descricao"):
                         st.write(f"**Descrição:** {reg['descricao']}")
@@ -669,9 +761,9 @@ if st.session_state.registros:
                 st.map(dados_mapa)
                 st.dataframe(dados_mapa, use_container_width=True)
             except Exception as e:
-                st.error(f"Erro ao exibir mapa: {str(e)}")
+                st.error(f"Erro: {str(e)}")
         else:
-            st.warning("Sem apontamentos com GPS")
+            st.warning("Nenhum apontamento com GPS")
 
 # ==========================================
 # EXPORTAR
@@ -681,19 +773,22 @@ if st.session_state.registros:
     st.divider()
     st.subheader("📤 Exportar")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     with col1:
         try:
             df = pd.DataFrame([
                 {
+                    "ID": r["id"] + 1,
                     "Apontamento": r["apontamento"],
                     "Categoria": r.get("categoria", ""),
+                    "Prioridade": r.get("prioridade", ""),
                     "Responsável": r.get("responsavel", ""),
                     "Latitude": r.get("latitude", ""),
                     "Longitude": r.get("longitude", ""),
-                    "Precisão (m)": r.get("accuracy", ""),
-                    "Data/Hora": r["data_hora"]
+                    "GPS_Fonte": r.get("gps_source", ""),
+                    "Data": r["data_hora"],
+                    "Tags": ", ".join(r.get("tags", []))
                 }
                 for r in st.session_state.registros
             ])
@@ -703,7 +798,7 @@ if st.session_state.registros:
                 df.to_excel(writer, sheet_name="Apontamentos", index=False)
             
             st.download_button(
-                label="📊 Excel",
+                label="📊 Baixar Excel",
                 data=output.getvalue(),
                 file_name=f"relatorio_{datetime.now().strftime('%d-%m-%Y')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -726,11 +821,7 @@ if st.session_state.registros:
             )
         except Exception as e:
             st.error(f"Erro: {str(e)}")
-    
-    with col3:
-        if st.button("ℹ️ Info", type="secondary"):
-            st.info(f"Total: {len(st.session_state.registros)} apontamentos")
 
 # Footer
 st.divider()
-st.caption("🚀 v2.2 | 📌 Desenvolvido com Streamlit | 💡 GPS capturado no momento da foto")
+st.caption("🚀 v3.0 | 📌 Desenvolvido com Streamlit | 💡 GPS capturado no navegador do dispositivo")
