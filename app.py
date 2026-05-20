@@ -1,12 +1,11 @@
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from io import BytesIO
 from datetime import datetime
 import pandas as pd
 import tempfile
 import os
 import json
-import base64
 from pathlib import Path
 
 # PDF
@@ -24,12 +23,12 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import cm
 
-# GEOLOCATION
+# JavaScript Execution
 try:
-    from streamlit_geolocation import streamlit_geolocation
-    HAS_GEOLOCATION = True
-except:
-    HAS_GEOLOCATION = False
+    from streamlit_js_eval import streamlit_js_eval
+    HAS_JS_EVAL = True
+except ImportError:
+    HAS_JS_EVAL = False
 
 # ==========================================
 # CONFIG
@@ -53,6 +52,13 @@ st.markdown("""
         border: 2px solid #e0e0e0;
         border-radius: 10px;
         padding: 15px;
+        margin: 10px 0;
+    }
+    .gps-box {
+        background-color: #e3f2fd;
+        border-left: 4px solid #1976d2;
+        padding: 15px;
+        border-radius: 5px;
         margin: 10px 0;
     }
     .success-box {
@@ -80,6 +86,50 @@ if "filtro_tag" not in st.session_state:
 if "modo_visualizacao" not in st.session_state:
     st.session_state.modo_visualizacao = "Grade"
 
+if "gps_capturado" not in st.session_state:
+    st.session_state.gps_capturado = None
+
+if "foto_atual" not in st.session_state:
+    st.session_state.foto_atual = None
+
+# ==========================================
+# FUNÇÃO: CAPTURAR GPS COM JAVASCRIPT
+# ==========================================
+
+def capturar_gps_js():
+    """Captura GPS usando JavaScript no navegador"""
+    if not HAS_JS_EVAL:
+        return None
+    
+    try:
+        js_code = """
+        new Promise((resolve) => {
+            if (!navigator.geolocation) {
+                resolve({error: "Geolocalização não suportada"});
+            } else {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        resolve({
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                            accuracy: position.coords.accuracy,
+                            timestamp: new Date().toISOString()
+                        });
+                    },
+                    (error) => {
+                        resolve({error: error.message});
+                    },
+                    {timeout: 10000, maximumAge: 0, enableHighAccuracy: true}
+                );
+            }
+        });
+        """
+        resultado = streamlit_js_eval(js_string=js_code, want_output=True)
+        return resultado
+    except Exception as e:
+        st.error(f"❌ Erro ao capturar GPS: {str(e)}")
+        return None
+
 # ==========================================
 # SIDEBAR - CONFIGURAÇÕES
 # ==========================================
@@ -89,7 +139,7 @@ with st.sidebar:
     
     modo_captura = st.radio(
         "📷 Modo de Captura",
-        ["Câmera", "Upload de Arquivo", "Webcam em Tempo Real"]
+        ["📸 Câmera + GPS", "📁 Upload Manual", "⚙️ Avançado"]
     )
     
     st.divider()
@@ -128,6 +178,18 @@ with st.sidebar:
     
     st.divider()
     
+    # Informações
+    with st.expander("ℹ️ Sobre GPS"):
+        st.write("""
+        **Captura de GPS:**
+        - 🎯 Ativa apenas após tirar a foto
+        - ⏱️ Aguarda confirmação do navegador
+        - 🔄 Máx 10 segundos de espera
+        - ✅ Coordenadas capturadas no momento exato
+        """)
+    
+    st.divider()
+    
     # Limpar dados
     if st.button("🗑️ Limpar Todos os Dados", type="secondary"):
         st.session_state.registros = []
@@ -135,43 +197,192 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# CAPTURA - CÂMERA
+# MODO 1: CÂMERA + GPS INTELIGENTE
 # ==========================================
 
-if modo_captura == "Câmera":
-    st.subheader("📸 Captura via Câmera")
+if modo_captura == "📸 Câmera + GPS":
     
-    col_cam, col_geo = st.columns([2, 1])
+    st.subheader("📸 Captura via Câmera com GPS Automático")
+    st.info("💡 A captura de GPS acontece após você tirar a foto para máxima precisão")
+    
+    col_cam, col_status = st.columns([2, 1])
     
     with col_cam:
         foto = st.camera_input("Tire uma foto")
     
-    with col_geo:
-        st.subheader("📡 Localização")
-        if HAS_GEOLOCATION:
-            location = streamlit_geolocation()
+    with col_status:
+        st.subheader("📡 Status GPS")
+        if st.session_state.gps_capturado:
+            lat = st.session_state.gps_capturado.get("latitude")
+            lon = st.session_state.gps_capturado.get("longitude")
+            acc = st.session_state.gps_capturado.get("accuracy")
             
-            if location:
-                latitude = location["latitude"]
-                longitude = location["longitude"]
-                st.success(f"✅ Localização capturada!")
-                st.write(f"Lat: {latitude:.4f}")
-                st.write(f"Lon: {longitude:.4f}")
+            if lat and lon:
+                st.markdown(f"""
+                <div class='gps-box'>
+                <b>✅ Localização Capturada!</b><br>
+                Lat: {lat:.6f}<br>
+                Lon: {lon:.6f}<br>
+                Precisão: ±{acc:.1f}m
+                </div>
+                """, unsafe_allow_html=True)
             else:
-                latitude = None
-                longitude = None
-                st.warning("Permita acesso à localização")
+                st.error(f"❌ {st.session_state.gps_capturado.get('error', 'Erro desconhecido')}")
         else:
-            st.info("Geolocalização não disponível")
-            latitude = None
-            longitude = None
+            st.warning("⏳ GPS não capturado ainda")
+    
+    # PROCESSAMENTO DA FOTO
+    if foto is not None:
+        try:
+            imagem = Image.open(foto)
+            st.session_state.foto_atual = imagem.copy()
+            
+            st.subheader("🖼️ Pré-visualização e Detalhes")
+            
+            col_img, col_info = st.columns([2, 1])
+            
+            with col_img:
+                st.image(imagem, use_container_width=True)
+            
+            with col_info:
+                st.write("**Informações da Foto:**")
+                try:
+                    st.write(f"🔍 Tamanho: {imagem.size[0]}x{imagem.size[1]}px")
+                    st.write(f"📋 Formato: {imagem.format if imagem.format else 'Desconhecido'}")
+                except Exception as e:
+                    st.write(f"ℹ️ Erro: {str(e)}")
+                
+                # CAPTURAR GPS AGORA
+                if st.button("🌍 Capturar GPS Agora", type="primary"):
+                    with st.spinner("⏳ Solicitando acesso ao GPS..."):
+                        gps_data = capturar_gps_js()
+                        if gps_data and "latitude" in gps_data:
+                            st.session_state.gps_capturado = gps_data
+                            st.success("✅ GPS capturado com sucesso!")
+                            st.rerun()
+                        elif gps_data and "error" in gps_data:
+                            st.error(f"❌ Erro: {gps_data['error']}")
+                        else:
+                            st.warning("⚠️ Não foi possível capturar GPS")
+            
+            # FORMULÁRIO DE DETALHES
+            st.divider()
+            st.subheader("✍️ Detalhes do Apontamento")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                nome_apontamento = st.text_input(
+                    "Nome do Apontamento",
+                    value=f"Apontamento {len(st.session_state.registros)+1}"
+                )
+            
+            with col2:
+                categorias = ["Inspeção", "Reparo", "Manutenção", "Documentação", "Outro"]
+                categoria = st.selectbox("Categoria", categorias)
+            
+            with col3:
+                prioridade = st.selectbox("Prioridade", ["Baixa", "Média", "Alta"])
+            
+            # Tags
+            tags_input = st.text_input(
+                "Tags (separadas por vírgula)",
+                placeholder="ex: urgente, área-externa, risco"
+            )
+            tags = [tag.strip() for tag in tags_input.split(",") if tag.strip()]
+            
+            # Descrição
+            descricao = st.text_area(
+                "Descrição adicional",
+                placeholder="Adicione observações, problemas encontrados, etc...",
+                height=100
+            )
+            
+            # Responsável
+            st.subheader("✋ Responsável")
+            responsavel = st.text_input("Nome do Responsável", placeholder="Seu nome")
+            
+            # ==========================================
+            # CONFIRMAR E SALVAR
+            # ==========================================
+            
+            col_btn1, col_btn2, col_btn3 = st.columns(3)
+            
+            with col_btn1:
+                if st.button("✅ Adicionar ao Relatório", type="primary"):
+                    
+                    if not responsavel.strip():
+                        st.error("❌ Por favor, insira o nome do responsável")
+                    elif not st.session_state.gps_capturado:
+                        st.error("❌ Por favor, capture o GPS primeiro")
+                    elif "error" in st.session_state.gps_capturado:
+                        st.error(f"❌ GPS inválido: {st.session_state.gps_capturado['error']}")
+                    else:
+                        try:
+                            data_hora = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+                            
+                            nome_arquivo = (
+                                f"{nome_apontamento.replace(' ', '_')}_"
+                                f"{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}"
+                            )
+                            
+                            latitude = st.session_state.gps_capturado.get("latitude")
+                            longitude = st.session_state.gps_capturado.get("longitude")
+                            accuracy = st.session_state.gps_capturado.get("accuracy", 0)
+                            
+                            maps_link = f"https://www.google.com/maps?q={latitude},{longitude}"
+                            
+                            registro = {
+                                "id": len(st.session_state.registros),
+                                "apontamento": nome_apontamento,
+                                "nome_arquivo": nome_arquivo,
+                                "imagem": st.session_state.foto_atual.copy(),
+                                "latitude": latitude,
+                                "longitude": longitude,
+                                "accuracy": accuracy,
+                                "maps_link": maps_link,
+                                "data_hora": data_hora,
+                                "categoria": categoria,
+                                "prioridade": prioridade,
+                                "tags": tags,
+                                "descricao": descricao,
+                                "responsavel": responsavel,
+                                "gps_timestamp": st.session_state.gps_capturado.get("timestamp")
+                            }
+                            
+                            st.session_state.registros.append(registro)
+                            st.session_state.gps_capturado = None
+                            st.session_state.foto_atual = None
+                            
+                            st.success("✅ Apontamento salvo com sucesso!")
+                            st.balloons()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erro ao salvar: {str(e)}")
+            
+            with col_btn2:
+                if st.button("🔄 Tirar Outra Foto", type="secondary"):
+                    st.session_state.gps_capturado = None
+                    st.session_state.foto_atual = None
+                    st.info("📸 Câmera reiniciada")
+                    st.rerun()
+            
+            with col_btn3:
+                if st.button("❌ Descartar", type="secondary"):
+                    st.session_state.gps_capturado = None
+                    st.session_state.foto_atual = None
+                    st.rerun()
+        
+        except Exception as e:
+            st.error(f"❌ Erro ao processar imagem: {str(e)}")
 
 # ==========================================
-# CAPTURA - UPLOAD
+# MODO 2: UPLOAD MANUAL
 # ==========================================
 
-elif modo_captura == "Upload de Arquivo":
-    st.subheader("📁 Upload de Arquivo")
+elif modo_captura == "📁 Upload Manual":
+    
+    st.subheader("📁 Upload Manual com GPS")
     
     col_upload, col_geo = st.columns([2, 1])
     
@@ -182,150 +393,185 @@ elif modo_captura == "Upload de Arquivo":
         )
     
     with col_geo:
-        st.subheader("📡 Localização Manual")
-        latitude = st.number_input("Latitude", value=0.0, format="%.6f")
-        longitude = st.number_input("Longitude", value=0.0, format="%.6f")
+        st.subheader("📡 Localização")
+        entrada_gps = st.radio("Forma de entrada:", ["Manual", "Capturar GPS"])
         
-        usar_gps = st.checkbox("Usar coordenadas?")
-        if not usar_gps:
-            latitude = None
-            longitude = None
+        if entrada_gps == "Manual":
+            latitude = st.number_input("Latitude", value=0.0, format="%.6f")
+            longitude = st.number_input("Longitude", value=0.0, format="%.6f")
+            usar_gps = latitude != 0.0 and longitude != 0.0
+        else:
+            if st.button("🌍 Capturar GPS do Navegador"):
+                with st.spinner("⏳ Capturando GPS..."):
+                    gps_data = capturar_gps_js()
+                    if gps_data and "latitude" in gps_data:
+                        latitude = gps_data["latitude"]
+                        longitude = gps_data["longitude"]
+                        st.success(f"✅ GPS: {latitude:.6f}, {longitude:.6f}")
+                        usar_gps = True
+                    else:
+                        st.error("❌ Erro ao capturar GPS")
+                        latitude = 0.0
+                        longitude = 0.0
+                        usar_gps = False
+            else:
+                latitude = 0.0
+                longitude = 0.0
+                usar_gps = False
+    
+    if foto and usar_gps if entrada_gps == "Manual" else True:
+        try:
+            imagem = Image.open(foto)
+            
+            st.subheader("🖼️ Pré-visualização")
+            st.image(imagem, use_container_width=True)
+            
+            # FORMULÁRIO
+            st.divider()
+            st.subheader("✍️ Detalhes do Apontamento")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                nome_apontamento = st.text_input(
+                    "Nome do Apontamento",
+                    value=f"Apontamento {len(st.session_state.registros)+1}"
+                )
+            
+            with col2:
+                categorias = ["Inspeção", "Reparo", "Manutenção", "Documentação", "Outro"]
+                categoria = st.selectbox("Categoria", categorias)
+            
+            with col3:
+                prioridade = st.selectbox("Prioridade", ["Baixa", "Média", "Alta"])
+            
+            tags_input = st.text_input("Tags (separadas por vírgula)")
+            tags = [tag.strip() for tag in tags_input.split(",") if tag.strip()]
+            
+            descricao = st.text_area("Descrição adicional", height=100)
+            responsavel = st.text_input("Nome do Responsável")
+            
+            if st.button("✅ Salvar Apontamento", type="primary"):
+                if not responsavel.strip():
+                    st.error("❌ Insira o responsável")
+                else:
+                    try:
+                        data_hora = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+                        nome_arquivo = (
+                            f"{nome_apontamento.replace(' ', '_')}_"
+                            f"{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}"
+                        )
+                        
+                        if entrada_gps == "Manual":
+                            lat_final = latitude if latitude != 0.0 else None
+                            lon_final = longitude if longitude != 0.0 else None
+                        else:
+                            lat_final = latitude
+                            lon_final = longitude
+                        
+                        maps_link = (
+                            f"https://www.google.com/maps?q={lat_final},{lon_final}"
+                            if lat_final and lon_final else None
+                        )
+                        
+                        registro = {
+                            "id": len(st.session_state.registros),
+                            "apontamento": nome_apontamento,
+                            "nome_arquivo": nome_arquivo,
+                            "imagem": imagem.copy(),
+                            "latitude": lat_final,
+                            "longitude": lon_final,
+                            "accuracy": None,
+                            "maps_link": maps_link,
+                            "data_hora": data_hora,
+                            "categoria": categoria,
+                            "prioridade": prioridade,
+                            "tags": tags,
+                            "descricao": descricao,
+                            "responsavel": responsavel,
+                            "gps_timestamp": None
+                        }
+                        
+                        st.session_state.registros.append(registro)
+                        st.success("✅ Apontamento salvo!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Erro: {str(e)}")
+        
+        except Exception as e:
+            st.error(f"❌ Erro ao processar: {str(e)}")
 
 # ==========================================
-# CAPTURA - WEBCAM
+# MODO 3: AVANÇADO
 # ==========================================
 
 else:
-    st.subheader("🎥 Webcam em Tempo Real")
-    st.info("💡 Dica: Tire múltiplas fotos da mesma posição para ter mais opções")
+    st.subheader("⚙️ Modo Avançado")
     
-    foto = st.camera_input("Webcam ao vivo")
+    tab1, tab2 = st.tabs(["📸 Câmera", "📁 Upload"])
     
-    # Geolocalização para webcam
-    latitude = None
-    longitude = None
-    if HAS_GEOLOCATION:
-        location = streamlit_geolocation()
-        if location:
-            latitude = location["latitude"]
-            longitude = location["longitude"]
-
-# ==========================================
-# PROCESSAMENTO DA FOTO
-# ==========================================
-
-if foto:
-    imagem = Image.open(foto)
-    
-    st.subheader("🖼️ Pré-visualização e Detalhes")
-    
-    col_img, col_info = st.columns([2, 1])
-    
-    with col_img:
-        st.image(imagem, use_container_width=True)
-    
-    with col_info:
-        st.write("**Informações da Foto:**")
-        st.write(f"Tamanho: {imagem.size[0]}x{imagem.size[1]}px")
-        st.write(f"Formato: {imagem.format}")
+    with tab1:
+        st.write("Câmera com todas as opções")
+        foto = st.camera_input("Câmera")
         
-        # Informações EXIF se disponíveis
-        try:
-            exif_data = imagem._getexif()
-            if exif_data:
-                st.write("✅ EXIF disponível")
-        except:
-            st.write("ℹ️ Sem dados EXIF")
-    
-    # FORMULÁRIO DE DETALHES
-    st.divider()
-    st.subheader("✍️ Detalhes do Apontamento")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        nome_apontamento = st.text_input(
-            "Nome do Apontamento",
-            value=f"Apontamento {len(st.session_state.registros)+1}"
-        )
-    
-    with col2:
-        categorias = ["Inspeção", "Reparo", "Manutenção", "Documentação", "Outro"]
-        categoria = st.selectbox("Categoria", categorias)
-    
-    with col3:
-        prioridade = st.selectbox("Prioridade", ["Baixa", "Média", "Alta"])
-    
-    # Tags
-    tags_input = st.text_input(
-        "Tags (separadas por vírgula)",
-        placeholder="ex: urgente, área-externa, risco"
-    )
-    tags = [tag.strip() for tag in tags_input.split(",") if tag.strip()]
-    
-    # Descrição
-    descricao = st.text_area(
-        "Descrição adicional",
-        placeholder="Adicione observações, problemas encontrados, etc...",
-        height=100
-    )
-    
-    # Assinatura
-    st.subheader("✋ Responsável")
-    responsavel = st.text_input("Nome do Responsável", placeholder="Seu nome")
-    
-    # ==========================================
-    # CONFIRMAR FOTO
-    # ==========================================
-    
-    col_btn1, col_btn2, col_btn3 = st.columns(3)
-    
-    with col_btn1:
-        if st.button("✅ Adicionar Foto ao Relatório", type="primary"):
+        if foto:
+            imagem = Image.open(foto)
+            st.image(imagem, use_container_width=True)
             
-            if not responsavel.strip():
-                st.error("❌ Por favor, insira o nome do responsável")
-            else:
-                data_hora = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-                
-                nome_arquivo = (
-                    f"{nome_apontamento.replace(' ', '_')}_"
-                    f"{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}"
-                )
-                
-                maps_link = None
-                if latitude and longitude and latitude != 0.0 and longitude != 0.0:
-                    maps_link = (
-                        f"https://www.google.com/maps?q="
-                        f"{latitude},{longitude}"
-                    )
-                
-                registro = {
-                    "id": len(st.session_state.registros),
-                    "apontamento": nome_apontamento,
-                    "nome_arquivo": nome_arquivo,
-                    "imagem": imagem.copy(),
-                    "latitude": latitude if latitude and latitude != 0.0 else None,
-                    "longitude": longitude if longitude and longitude != 0.0 else None,
-                    "maps_link": maps_link,
-                    "data_hora": data_hora,
-                    "categoria": categoria,
-                    "prioridade": prioridade,
-                    "tags": tags,
-                    "descricao": descricao,
-                    "responsavel": responsavel
-                }
-                
-                st.session_state.registros.append(registro)
-                st.success("✅ Foto adicionada ao relatório com sucesso!")
-                st.rerun()
-    
-    with col_btn2:
-        if st.button("🎯 Adicionar + Outra", type="secondary"):
-            st.info("Câmera reiniciada. Tire outra foto!")
-    
-    with col_btn3:
-        st.button("❌ Descartar", type="secondary")
+            col_gps, col_manual = st.columns(2)
+            
+            with col_gps:
+                if st.button("🌍 Capturar GPS Automático"):
+                    with st.spinner("⏳ Capturando..."):
+                        gps_data = capturar_gps_js()
+                        if gps_data and "latitude" in gps_data:
+                            st.session_state.gps_capturado = gps_data
+                            st.success("✅ GPS capturado!")
+                        else:
+                            st.error("❌ Erro ao capturar")
+            
+            with col_manual:
+                if st.button("📍 Entrada Manual de GPS"):
+                    st.session_state.gps_capturado = None
+            
+            # Rest of advanced form...
+            nome_apontamento = st.text_input("Apontamento")
+            categoria = st.selectbox("Categoria", ["Inspeção", "Reparo", "Manutenção", "Documentação", "Outro"])
+            prioridade = st.selectbox("Prioridade", ["Baixa", "Média", "Alta"])
+            tags_input = st.text_input("Tags")
+            descricao = st.text_area("Descrição")
+            responsavel = st.text_input("Responsável")
+            
+            if st.button("✅ Salvar"):
+                if responsavel and st.session_state.gps_capturado:
+                    tags = [tag.strip() for tag in tags_input.split(",") if tag.strip()]
+                    data_hora = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+                    
+                    gps = st.session_state.gps_capturado
+                    lat = gps.get("latitude")
+                    lon = gps.get("longitude")
+                    
+                    registro = {
+                        "id": len(st.session_state.registros),
+                        "apontamento": nome_apontamento,
+                        "nome_arquivo": f"{nome_apontamento}_{data_hora}".replace(" ", "_").replace(":", "-"),
+                        "imagem": imagem.copy(),
+                        "latitude": lat,
+                        "longitude": lon,
+                        "accuracy": gps.get("accuracy"),
+                        "maps_link": f"https://www.google.com/maps?q={lat},{lon}",
+                        "data_hora": data_hora,
+                        "categoria": categoria,
+                        "prioridade": prioridade,
+                        "tags": tags,
+                        "descricao": descricao,
+                        "responsavel": responsavel,
+                        "gps_timestamp": gps.get("timestamp")
+                    }
+                    
+                    st.session_state.registros.append(registro)
+                    st.success("✅ Salvo!")
+                    st.rerun()
 
 # ==========================================
 # VISUALIZAÇÃO DO RELATÓRIO
@@ -336,7 +582,7 @@ if st.session_state.registros:
     st.divider()
     st.subheader("📑 Relatório de Apontamentos")
     
-    # FILTRAR REGISTROS
+    # FILTRAR
     registros_filtrados = st.session_state.registros
     
     if st.session_state.filtro_tag != "Todos":
@@ -347,367 +593,144 @@ if st.session_state.registros:
     
     st.info(f"📌 Exibindo {len(registros_filtrados)} de {len(st.session_state.registros)} fotos")
     
-    # ==========================================
-    # VISUALIZAÇÃO EM GRADE
-    # ==========================================
-    
+    # GRADE
     if st.session_state.modo_visualizacao == "Grade":
-        
         cols = st.columns(3)
         
         for idx, reg in enumerate(registros_filtrados):
-            
             with cols[idx % 3]:
-                st.markdown(f"""
-                <div class='photo-card'>
-                    <b>{reg['apontamento']}</b>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"**{reg['apontamento']}**")
+                try:
+                    st.image(reg["imagem"], use_container_width=True)
+                except:
+                    pass
                 
-                st.image(reg["imagem"], use_container_width=True)
-                
-                # Info compacta
-                st.caption(f"🏷️ {', '.join(reg.get('tags', ['sem-tag']))}")
                 st.caption(f"👤 {reg.get('responsavel', 'N/A')}")
                 st.caption(f"📅 {reg['data_hora']}")
                 
-                if reg.get("latitude") and reg.get("longitude"):
+                if reg.get("latitude"):
                     st.caption(f"📍 {reg['latitude']:.4f}, {reg['longitude']:.4f}")
+                    st.caption(f"±{reg.get('accuracy', 'N/A')}m")
                 
-                col_edit, col_del = st.columns(2)
-                with col_edit:
-                    if st.button(f"✏️ Editar", key=f"edit_{idx}"):
-                        st.session_state.edit_index = idx
-                with col_del:
-                    if st.button(f"🗑️", key=f"del_{idx}"):
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("✏️", key=f"e{idx}"):
+                        pass
+                with col_b:
+                    if st.button("🗑️", key=f"d{idx}"):
                         st.session_state.registros.pop(idx)
                         st.rerun()
     
-    # ==========================================
-    # VISUALIZAÇÃO EM LISTA
-    # ==========================================
-    
+    # LISTA
     elif st.session_state.modo_visualizacao == "Lista":
-        
         for idx, reg in enumerate(registros_filtrados):
-            
-            with st.expander(f"📸 {reg['apontamento']} - {reg['responsavel']}", expanded=False):
-                
+            with st.expander(f"📸 {reg['apontamento']} - {reg['responsavel']}"):
                 col1, col2 = st.columns([1, 2])
                 
                 with col1:
-                    st.image(reg["imagem"], use_container_width=True)
+                    try:
+                        st.image(reg["imagem"], use_container_width=True)
+                    except:
+                        pass
                 
                 with col2:
                     st.write(f"**Categoria:** {reg.get('categoria', 'N/A')}")
-                    st.write(f"**Prioridade:** {reg.get('prioridade', 'N/A')} 🔴")
-                    st.write(f"**Responsável:** {reg.get('responsavel', 'N/A')}")
+                    st.write(f"**Prioridade:** {reg.get('prioridade', 'N/A')}")
                     st.write(f"**Data/Hora:** {reg['data_hora']}")
                     
-                    if reg.get("tags"):
-                        st.write(f"**Tags:** {', '.join(reg['tags'])}")
+                    if reg.get("latitude"):
+                        st.write(f"**Localização:** {reg['latitude']:.6f}, {reg['longitude']:.6f}")
+                        st.write(f"**Precisão GPS:** ±{reg.get('accuracy', 'N/A')}m")
+                        st.markdown(f"[🌎 Google Maps]({reg['maps_link']})")
                     
                     if reg.get("descricao"):
                         st.write(f"**Descrição:** {reg['descricao']}")
                     
-                    if reg.get("latitude") and reg.get("longitude"):
-                        st.write(f"**Localização:** {reg['latitude']:.6f}, {reg['longitude']:.6f}")
-                        st.markdown(f"[🌎 Abrir no Google Maps]({reg['maps_link']})")
-                    else:
-                        st.write("**Localização:** Sem coordenadas")
-                    
-                    col_edit, col_del = st.columns(2)
-                    with col_edit:
-                        st.button(f"✏️ Editar", key=f"list_edit_{idx}")
-                    with col_del:
-                        if st.button(f"🗑️ Remover", key=f"list_del_{idx}"):
-                            st.session_state.registros.pop(idx)
-                            st.rerun()
+                    if st.button("🗑️ Remover", key=f"del_{idx}"):
+                        st.session_state.registros.pop(idx)
+                        st.rerun()
     
-    # ==========================================
-    # VISUALIZAÇÃO EM MAPA
-    # ==========================================
-    
-    else:  # Mapa
-        
-        registros_com_gps = [
-            r for r in registros_filtrados 
-            if r.get("latitude") and r.get("longitude")
-        ]
+    # MAPA
+    else:
+        registros_com_gps = [r for r in registros_filtrados if r.get("latitude")]
         
         if registros_com_gps:
-            
-            # Preparar dados para o mapa
-            dados_mapa = pd.DataFrame([
-                {
-                    "latitude": r["latitude"],
-                    "longitude": r["longitude"],
-                    "nome": r["apontamento"],
-                    "responsavel": r.get("responsavel", "N/A")
-                }
-                for r in registros_com_gps
-            ])
-            
-            st.map(dados_mapa)
-            
-            st.subheader("📍 Apontamentos no Mapa")
-            st.dataframe(dados_mapa, use_container_width=True)
-        
+            try:
+                dados_mapa = pd.DataFrame([
+                    {
+                        "latitude": r["latitude"],
+                        "longitude": r["longitude"],
+                        "nome": r["apontamento"],
+                        "responsavel": r.get("responsavel", "N/A")
+                    }
+                    for r in registros_com_gps
+                ])
+                
+                st.map(dados_mapa)
+                st.dataframe(dados_mapa, use_container_width=True)
+            except Exception as e:
+                st.error(f"Erro ao exibir mapa: {str(e)}")
         else:
-            st.warning("⚠️ Nenhum apontamento com coordenadas GPS para exibir no mapa")
+            st.warning("Sem apontamentos com GPS")
 
 # ==========================================
-# EXPORTAR RELATÓRIOS
+# EXPORTAR
 # ==========================================
 
 if st.session_state.registros:
-    
     st.divider()
-    st.subheader("📤 Exportar Relatórios")
+    st.subheader("📤 Exportar")
     
-    # ==========================================
-    # GERAR EXCEL AVANÇADO
-    # ==========================================
+    col1, col2, col3 = st.columns(3)
     
-    def gerar_excel_avancado(registros):
-        
-        df = pd.DataFrame([
-            {
-                "ID": idx + 1,
-                "Apontamento": r["apontamento"],
-                "Categoria": r.get("categoria", ""),
-                "Prioridade": r.get("prioridade", ""),
-                "Responsável": r.get("responsavel", ""),
-                "Tags": ", ".join(r.get("tags", [])),
-                "Descrição": r.get("descricao", ""),
-                "Latitude": r.get("latitude", ""),
-                "Longitude": r.get("longitude", ""),
-                "Data/Hora": r["data_hora"],
-                "Google Maps": r.get("maps_link", "")
-            }
-            for idx, r in enumerate(registros)
-        ])
-        
-        output = BytesIO()
-        
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, sheet_name="Apontamentos", index=False)
-            
-            # Formatação
-            worksheet = writer.sheets["Apontamentos"]
-            worksheet.column_dimensions['A'].width = 5
-            worksheet.column_dimensions['B'].width = 20
-            worksheet.column_dimensions['C'].width = 15
-            worksheet.column_dimensions['D'].width = 12
-            worksheet.column_dimensions['E'].width = 15
-            worksheet.column_dimensions['F'].width = 20
-            worksheet.column_dimensions['G'].width = 25
-        
-        return output.getvalue()
-    
-    # ==========================================
-    # GERAR PDF PROFISSIONAL
-    # ==========================================
-    
-    def gerar_pdf_profissional(registros):
-        
-        buffer = BytesIO()
-        
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=A4,
-            rightMargin=1*cm,
-            leftMargin=1*cm,
-            topMargin=1*cm,
-            bottomMargin=1*cm
-        )
-        
-        styles = getSampleStyleSheet()
-        
-        # Estilos customizados
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor('#1f77b4'),
-            spaceAfter=30,
-            alignment=1
-        )
-        
-        heading_style = ParagraphStyle(
-            'CustomHeading',
-            parent=styles['Heading2'],
-            fontSize=14,
-            textColor=colors.HexColor('#2ca02c'),
-            spaceAfter=10,
-            spaceBefore=10
-        )
-        
-        elementos = []
-        
-        # Cabeçalho
-        elementos.append(
-            Paragraph(
-                "📍 RELATÓRIO FOTOGRÁFICO INTELIGENTE",
-                title_style
-            )
-        )
-        
-        data_relatorio = datetime.now().strftime("%d de %B de %Y às %H:%M")
-        elementos.append(
-            Paragraph(
-                f"Gerado em: {data_relatorio}",
-                styles["Normal"]
-            )
-        )
-        
-        elementos.append(Spacer(1, 20))
-        
-        # Sumário
-        elementos.append(Paragraph("SUMÁRIO", heading_style))
-        
-        tabela_sumario = Table([
-            ["Total de Apontamentos", str(len(registros))],
-            ["Com Coordenadas GPS", str(sum(1 for r in registros if r.get("latitude")))],
-            ["Data de Início", registros[0]["data_hora"] if registros else "N/A"],
-            ["Data de Término", registros[-1]["data_hora"] if registros else "N/A"]
-        ])
-        
-        tabela_sumario.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f4f8')),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
-        
-        elementos.append(tabela_sumario)
-        elementos.append(Spacer(1, 20))
-        
-        # Apontamentos
-        for idx, reg in enumerate(registros, 1):
-            
-            elementos.append(PageBreak() if idx > 1 else Spacer(1, 10))
-            
-            elementos.append(
-                Paragraph(
-                    f"Apontamento {idx}: {reg['apontamento']}",
-                    heading_style
-                )
-            )
-            
-            # Info tabular
-            info_table = Table([
-                ["Responsável", reg.get("responsavel", "N/A")],
-                ["Categoria", reg.get("categoria", "N/A")],
-                ["Prioridade", reg.get("prioridade", "N/A")],
-                ["Data/Hora", reg["data_hora"]],
-                ["Tags", ", ".join(reg.get("tags", ["N/A"]))],
-                ["Latitude", f"{reg.get('latitude', 'N/A')}"],
-                ["Longitude", f"{reg.get('longitude', 'N/A')}"]
+    with col1:
+        try:
+            df = pd.DataFrame([
+                {
+                    "Apontamento": r["apontamento"],
+                    "Categoria": r.get("categoria", ""),
+                    "Responsável": r.get("responsavel", ""),
+                    "Latitude": r.get("latitude", ""),
+                    "Longitude": r.get("longitude", ""),
+                    "Precisão (m)": r.get("accuracy", ""),
+                    "Data/Hora": r["data_hora"]
+                }
+                for r in st.session_state.registros
             ])
             
-            info_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f0f0f0')),
-                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-                ('GRID', (0, 0), (-1, -1), 1, colors.lightgrey)
-            ]))
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df.to_excel(writer, sheet_name="Apontamentos", index=False)
             
-            elementos.append(info_table)
-            elementos.append(Spacer(1, 15))
+            st.download_button(
+                label="📊 Excel",
+                data=output.getvalue(),
+                file_name=f"relatorio_{datetime.now().strftime('%d-%m-%Y')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        except Exception as e:
+            st.error(f"Erro: {str(e)}")
+    
+    with col2:
+        try:
+            json_data = json.dumps([
+                {k: v if k != "imagem" else None for k, v in r.items()}
+                for r in st.session_state.registros
+            ], indent=2, ensure_ascii=False)
             
-            # Imagem
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-                caminho = tmp.name
-                reg["imagem"].save(caminho, format="JPEG")
-            
-            img = RLImage(caminho, width=15*cm, height=11*cm)
-            elementos.append(img)
-            
-            elementos.append(Spacer(1, 10))
-            
-            # Descrição
-            if reg.get("descricao"):
-                elementos.append(
-                    Paragraph(
-                        f"<b>Descrição:</b> {reg['descricao']}",
-                        styles["Normal"]
-                    )
-                )
-                elementos.append(Spacer(1, 10))
-        
-        doc.build(elementos)
-        
-        # Limpar arquivos temporários
-        for arq in os.listdir(tempfile.gettempdir()):
-            if arq.endswith(".jpg"):
-                try:
-                    os.remove(os.path.join(tempfile.gettempdir(), arq))
-                except:
-                    pass
-        
-        return buffer.getvalue()
+            st.download_button(
+                label="💾 Backup JSON",
+                data=json_data,
+                file_name=f"backup_{datetime.now().strftime('%d-%m-%Y')}.json",
+                mime="application/json"
+            )
+        except Exception as e:
+            st.error(f"Erro: {str(e)}")
     
-    # ==========================================
-    # BOTÕES DE DOWNLOAD
-    # ==========================================
-    
-    col_down1, col_down2, col_down3 = st.columns(3)
-    
-    with col_down1:
-        excel_bytes = gerar_excel_avancado(st.session_state.registros)
-        st.download_button(
-            label="📊 Baixar Excel",
-            data=excel_bytes,
-            file_name=f"relatorio_{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    
-    with col_down2:
-        pdf_bytes = gerar_pdf_profissional(st.session_state.registros)
-        st.download_button(
-            label="📄 Baixar PDF Profissional",
-            data=pdf_bytes,
-            file_name=f"relatorio_{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}.pdf",
-            mime="application/pdf"
-        )
-    
-    with col_down3:
-        # JSON backup
-        json_data = json.dumps([
-            {
-                k: v if k != "imagem" else None 
-                for k, v in reg.items()
-            }
-            for reg in st.session_state.registros
-        ], indent=2, ensure_ascii=False)
-        
-        st.download_button(
-            label="💾 Backup JSON",
-            data=json_data,
-            file_name=f"backup_{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}.json",
-            mime="application/json"
-        )
+    with col3:
+        if st.button("ℹ️ Info", type="secondary"):
+            st.info(f"Total: {len(st.session_state.registros)} apontamentos")
 
-# ==========================================
-# RODAPÉ
-# ==========================================
-
+# Footer
 st.divider()
-
-col_foot1, col_foot2, col_foot3 = st.columns(3)
-
-with col_foot1:
-    st.caption("🚀 Versão 2.0 - Relatório Fotográfico Inteligente")
-
-with col_foot2:
-    st.caption("📌 Desenvolvido com Streamlit")
-
-with col_foot3:
-    st.caption("💡 Sempre guarde backups de seus dados!")
+st.caption("🚀 v2.2 | 📌 Desenvolvido com Streamlit | 💡 GPS capturado no momento da foto")
