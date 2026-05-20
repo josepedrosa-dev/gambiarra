@@ -400,6 +400,21 @@ if st.session_state.registros:
 
             if reg["latitude"]:
 
+                st.write(f"📍 Latitude: {reg['latitude']}")
+                st.write(f"📍 Longitude: {reg['longitude']}")
+                
+                if reg.get("precisao"):
+                
+                    st.write(
+                        f"🎯 Precisão: ±{round(reg['precisao'],1)} m"
+                    )
+                
+                if reg.get("gps_timestamp"):
+                
+                    st.caption(
+                        f"🕒 GPS capturado em: {reg['gps_timestamp']}"
+                    )
+                
                 st.markdown(
                     f"""
                     [🌎 Abrir localização]({reg['maps_link']})
@@ -605,6 +620,11 @@ def gerar_pdf(registros):
                 elementos.append(
                     Paragraph(
                         f"<b>Precisão:</b> ±{round(reg['precisao'], 1)} metros",
+                        styles["Normal"]
+                    )
+
+                    Paragraph(
+                        f"Precisão: ±{round(reg['precisao'],1)} metros",
                         styles["Normal"]
                     )
                 )
