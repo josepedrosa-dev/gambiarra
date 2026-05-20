@@ -10,7 +10,8 @@ from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
     Spacer,
-    Image as RLImage
+    Image as RLImage,
+    PageBreak
 )
 
 from reportlab.lib.styles import getSampleStyleSheet
@@ -36,6 +37,9 @@ st.title("📍 Relatório Fotográfico")
 
 if "registros" not in st.session_state:
     st.session_state.registros = []
+
+if "camera_key" not in st.session_state:
+    st.session_state.camera_key = 0
 
 # =====================================================
 # GPS CONTÍNUO
@@ -118,6 +122,26 @@ if gps:
     precisao = gps.get("accuracy")
 
 # =====================================================
+# DADOS FIXOS DO RELATÓRIO
+# =====================================================
+
+st.subheader("📋 Informações do Relatório")
+
+col1, col2 = st.columns(2)
+
+with col1:
+
+    responsavel = st.text_input(
+        "👤 Responsável *"
+    )
+
+with col2:
+
+    medicao_fiscal = st.text_input(
+        "📌 Medição Fiscal *"
+    )
+
+# =====================================================
 # STATUS GPS
 # =====================================================
 
@@ -125,26 +149,31 @@ st.subheader("📡 Status GPS")
 
 if latitude and longitude:
 
-    st.success("✅ GPS ativo")
+    st.success(
+        "✅ GPS ativo"
+    )
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
+
         st.metric(
             "Latitude",
             round(latitude, 6)
         )
 
     with col2:
+
         st.metric(
             "Longitude",
             round(longitude, 6)
         )
 
     with col3:
+
         st.metric(
             "Precisão",
-            f"{round(precisao, 1)} m"
+            f"{round(precisao,1)} m"
         )
 
 else:
@@ -154,24 +183,45 @@ else:
         ❌ GPS não disponível
         
         Verifique:
-        - Permissão de localização
-        - GPS ativado
+        - GPS do celular ativado
+        - Permissão do navegador
         - HTTPS habilitado
         """
     )
 
 # =====================================================
+# BLOQUEIO
+# =====================================================
+
+if not responsavel.strip() or not medicao_fiscal.strip():
+
+    st.warning(
+        """
+        ⚠️ Preencha:
+        - Responsável
+        - Medição Fiscal
+        
+        antes de adicionar fotos.
+        """
+    )
+
+    st.stop()
+
+# =====================================================
 # FOTO
 # =====================================================
+
+st.divider()
 
 st.subheader("📸 Capturar Foto")
 
 foto = st.camera_input(
-    "Tire uma foto"
+    "Tire uma foto",
+    key=f"camera_{st.session_state.camera_key}"
 )
 
 # =====================================================
-# PROCESSAMENTO
+# PROCESSAMENTO FOTO
 # =====================================================
 
 if foto:
@@ -185,29 +235,19 @@ if foto:
 
     st.divider()
 
-    st.subheader("📝 Informações")
+    st.subheader("📝 Informações da Foto")
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-
-        apontamento = st.text_input(
-            "Nome do apontamento",
-            value=f"Apontamento {len(st.session_state.registros)+1}"
-        )
-
-    with col2:
-
-        responsavel = st.text_input(
-            "Responsável"
-        )
+    nome_apontamento = st.text_input(
+        "Nome do Apontamento *",
+        value=f"Apontamento {len(st.session_state.registros)+1}"
+    )
 
     descricao = st.text_area(
-        "Descrição"
+        "Descrição / Observações"
     )
 
     # =================================================
-    # GPS DA FOTO
+    # GPS
     # =================================================
 
     maps_link = None
@@ -220,7 +260,7 @@ if foto:
         )
 
         st.success(
-            "📍 Coordenada vinculada à foto"
+            "📍 Coordenada vinculada"
         )
 
         st.markdown(
@@ -236,48 +276,86 @@ if foto:
         )
 
     # =================================================
-    # SALVAR
+    # BOTÕES
     # =================================================
 
-    if st.button(
-        "✅ Adicionar ao Relatório",
-        type="primary"
-    ):
+    col1, col2 = st.columns(2)
 
-        registro = {
+    # =============================================
+    # ADICIONAR
+    # =============================================
 
-            "id": len(st.session_state.registros) + 1,
+    with col1:
 
-            "apontamento": apontamento,
+        if st.button(
+            "✅ Adicionar Foto",
+            type="primary"
+        ):
 
-            "responsavel": responsavel,
+            if not nome_apontamento.strip():
 
-            "descricao": descricao,
+                st.error(
+                    "❌ Informe o nome do apontamento"
+                )
 
-            "imagem": imagem.copy(),
+            else:
 
-            "latitude": latitude,
+                registro = {
 
-            "longitude": longitude,
+                    "id": len(st.session_state.registros) + 1,
 
-            "precisao": precisao,
+                    "responsavel": responsavel,
 
-            "maps_link": maps_link,
+                    "medicao_fiscal": medicao_fiscal,
 
-            "data_hora": datetime.now().strftime(
-                "%d/%m/%Y %H:%M:%S"
-            )
-        }
+                    "nome_apontamento": nome_apontamento,
 
-        st.session_state.registros.append(
-            registro
-        )
+                    "descricao": descricao,
 
-        st.success(
-            "📸 Foto adicionada!"
-        )
+                    "imagem": imagem.copy(),
 
-        st.rerun()
+                    "latitude": latitude,
+
+                    "longitude": longitude,
+
+                    "precisao": precisao,
+
+                    "maps_link": maps_link,
+
+                    "data_hora": datetime.now().strftime(
+                        "%d/%m/%Y %H:%M:%S"
+                    )
+                }
+
+                st.session_state.registros.append(
+                    registro
+                )
+
+                st.success(
+                    "📸 Foto adicionada!"
+                )
+
+                # =====================================
+                # LIMPA CAMERA AUTOMATICAMENTE
+                # =====================================
+
+                st.session_state.camera_key += 1
+
+                st.rerun()
+
+    # =============================================
+    # CANCELAR
+    # =============================================
+
+    with col2:
+
+        if st.button(
+            "❌ Cancelar"
+        ):
+
+            st.session_state.camera_key += 1
+
+            st.rerun()
 
 # =====================================================
 # RELATÓRIO
@@ -287,7 +365,11 @@ if st.session_state.registros:
 
     st.divider()
 
-    st.subheader("📑 Relatório")
+    st.subheader("📑 Fotos do Relatório")
+
+    st.info(
+        f"📸 {len(st.session_state.registros)} foto(s)"
+    )
 
     remover = None
 
@@ -296,16 +378,12 @@ if st.session_state.registros:
     ):
 
         with st.expander(
-            f"{reg['id']} • {reg['apontamento']}"
+            f"{reg['id']} • {reg['nome_apontamento']}"
         ):
 
             st.image(
                 reg["imagem"],
                 use_container_width=True
-            )
-
-            st.write(
-                f"👤 {reg['responsavel']}"
             )
 
             st.write(
@@ -320,21 +398,9 @@ if st.session_state.registros:
 
             if reg["latitude"]:
 
-                st.write(
-                    f"📍 Latitude: {reg['latitude']}"
-                )
-
-                st.write(
-                    f"📍 Longitude: {reg['longitude']}"
-                )
-
-                st.write(
-                    f"🎯 Precisão: ±{round(reg['precisao'],1)} m"
-                )
-
                 st.markdown(
                     f"""
-                    [🌎 Abrir Localização]({reg['maps_link']})
+                    [🌎 Abrir localização]({reg['maps_link']})
                     """
                 )
 
@@ -371,9 +437,11 @@ def gerar_excel(registros):
 
             "ID": r["id"],
 
-            "Apontamento": r["apontamento"],
-
             "Responsável": r["responsavel"],
+
+            "Medição Fiscal": r["medicao_fiscal"],
+
+            "Apontamento": r["nome_apontamento"],
 
             "Descrição": r["descricao"],
 
@@ -424,19 +492,49 @@ def gerar_pdf(registros):
 
     elementos = []
 
+    # =============================================
+    # CABEÇALHO
+    # =============================================
+
+    elementos.append(
+        Paragraph(
+            "<b>RELATÓRIO FOTOGRÁFICO</b>",
+            styles["Title"]
+        )
+    )
+
+    elementos.append(
+        Spacer(1, 20)
+    )
+
+    elementos.append(
+        Paragraph(
+            f"<b>Responsável:</b> {registros[0]['responsavel']}",
+            styles["Normal"]
+        )
+    )
+
+    elementos.append(
+        Paragraph(
+            f"<b>Medição Fiscal:</b> {registros[0]['medicao_fiscal']}",
+            styles["Normal"]
+        )
+    )
+
+    elementos.append(
+        Spacer(1, 30)
+    )
+
+    # =============================================
+    # FOTOS
+    # =============================================
+
     for reg in registros:
 
         elementos.append(
             Paragraph(
-                f"<b>{reg['apontamento']}</b>",
+                f"<b>{reg['nome_apontamento']}</b>",
                 styles["Heading2"]
-            )
-        )
-
-        elementos.append(
-            Paragraph(
-                f"Responsável: {reg['responsavel']}",
-                styles["Normal"]
             )
         )
 
@@ -450,10 +548,6 @@ def gerar_pdf(registros):
         elementos.append(
             Spacer(1, 10)
         )
-
-        # =========================================
-        # IMAGEM
-        # =========================================
 
         with tempfile.NamedTemporaryFile(
             delete=False,
@@ -479,10 +573,6 @@ def gerar_pdf(registros):
             Spacer(1, 10)
         )
 
-        # =========================================
-        # DESCRIÇÃO
-        # =========================================
-
         if reg["descricao"]:
 
             elementos.append(
@@ -492,32 +582,7 @@ def gerar_pdf(registros):
                 )
             )
 
-        # =========================================
-        # GPS
-        # =========================================
-
         if reg["latitude"]:
-
-            elementos.append(
-                Paragraph(
-                    f"Latitude: {reg['latitude']}",
-                    styles["Normal"]
-                )
-            )
-
-            elementos.append(
-                Paragraph(
-                    f"Longitude: {reg['longitude']}",
-                    styles["Normal"]
-                )
-            )
-
-            elementos.append(
-                Paragraph(
-                    f"Precisão: ±{round(reg['precisao'],1)} metros",
-                    styles["Normal"]
-                )
-            )
 
             link = (
                 f'<link href="{reg["maps_link"]}">'
@@ -557,7 +622,7 @@ if st.session_state.registros:
 
     st.divider()
 
-    st.subheader("📥 Exportar")
+    st.subheader("📥 Exportar Relatório")
 
     col1, col2 = st.columns(2)
 
