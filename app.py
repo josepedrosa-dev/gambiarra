@@ -26,47 +26,122 @@ from streamlit_js_eval import streamlit_js_eval
 
 st.set_page_config(
     page_title="Relatório Fotográfico GPS",
-    layout="wide",
+    layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for clean design
+# Custom CSS for mobile optimization
 st.markdown("""
     <style>
+        * {
+            box-sizing: border-box;
+        }
+        
+        .main {
+            padding: 1rem;
+            max-width: 100%;
+        }
+        
+        body {
+            font-size: 16px;
+        }
+        
+        /* Mobile optimized spacing */
         .section-header {
-            font-size: 1.2rem;
+            font-size: 1.1rem;
             font-weight: 600;
-            margin: 1.5rem 0 1rem 0;
+            margin: 1rem 0 0.75rem 0;
             border-bottom: 1px solid #e0e0e0;
             padding-bottom: 0.5rem;
             color: #1f1f1f;
         }
-        .info-box {
-            background: #f5f5f5;
-            padding: 1rem;
+        
+        .info-box, .success-box, .warning-box {
+            padding: 0.75rem;
             border-radius: 6px;
-            border-left: 3px solid #0066cc;
+            border-left: 3px solid;
             margin: 0.5rem 0;
+            font-size: 0.95rem;
+            line-height: 1.4;
         }
+        
         .success-box {
             background: #f1f8e9;
-            padding: 1rem;
-            border-radius: 6px;
-            border-left: 3px solid #558b2f;
-            margin: 0.5rem 0;
+            border-left-color: #558b2f;
         }
+        
         .warning-box {
             background: #fff3e0;
-            padding: 1rem;
-            border-radius: 6px;
-            border-left: 3px solid #e65100;
-            margin: 0.5rem 0;
+            border-left-color: #e65100;
         }
+        
+        .info-box {
+            background: #f5f5f5;
+            border-left-color: #0066cc;
+        }
+        
         .photo-item {
             background: #fafafa;
             border-radius: 8px;
-            padding: 1.5rem;
-            margin: 1rem 0;
+            padding: 1rem;
+            margin: 0.75rem 0;
+        }
+        
+        /* Input fields mobile friendly */
+        input, textarea, select {
+            font-size: 16px !important;
+            padding: 0.75rem !important;
+            border-radius: 4px !important;
+        }
+        
+        /* Button optimization */
+        button {
+            font-size: 0.95rem;
+            padding: 0.75rem !important;
+            min-height: 44px;
+            border-radius: 4px;
+        }
+        
+        /* Metric optimization */
+        [data-testid="metric-container"] {
+            background: #f5f5f5;
+            border-radius: 6px;
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+        }
+        
+        /* Expander mobile friendly */
+        [data-testid="expander"] {
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            margin: 0.5rem 0;
+        }
+        
+        /* Responsive grid */
+        @media (max-width: 640px) {
+            .main {
+                padding: 0.75rem;
+            }
+            
+            h1 {
+                font-size: 1.5rem;
+                margin-bottom: 1rem;
+            }
+            
+            .section-header {
+                font-size: 1rem;
+                margin: 0.75rem 0 0.5rem 0;
+            }
+            
+            [data-testid="column"] {
+                min-width: 100% !important;
+            }
+            
+            .photo-info {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+            }
         }
     </style>
 """, unsafe_allow_html=True)
@@ -170,19 +245,17 @@ if gps:
 
 st.markdown("<div class='section-header'>Informações Básicas</div>", unsafe_allow_html=True)
 
-col1, col2 = st.columns(2, gap="large")
+responsavel = st.text_input(
+    "Responsável",
+    placeholder="Nome do responsável",
+    max_chars=100
+)
 
-with col1:
-    responsavel = st.text_input(
-        "Responsável",
-        placeholder="Nome do responsável"
-    )
-
-with col2:
-    medicao_fiscal = st.text_input(
-        "Medição Fiscal",
-        placeholder="Número ou referência"
-    )
+medicao_fiscal = st.text_input(
+    "Medição Fiscal",
+    placeholder="Número ou referência",
+    max_chars=100
+)
 
 # =====================================================
 # STATUS GPS
@@ -191,7 +264,7 @@ with col2:
 st.markdown("<div class='section-header'>Status do GPS</div>", unsafe_allow_html=True)
 
 if latitude is not None and longitude is not None:
-    col1, col2, col3 = st.columns(3, gap="medium")
+    col1, col2 = st.columns(2, gap="small")
 
     with col1:
         st.metric("Latitude", f"{round(float(latitude), 6)}°")
@@ -199,9 +272,7 @@ if latitude is not None and longitude is not None:
     with col2:
         st.metric("Longitude", f"{round(float(longitude), 6)}°")
 
-    with col3:
-        if precisao is not None:
-            st.metric("Precisão", f"±{round(float(precisao), 1)} m")
+    st.metric("Precisão", f"±{round(float(precisao), 1)} m" if precisao else "N/A")
 
     if gps_timestamp:
         st.caption(f"Última atualização: {gps_timestamp}")
@@ -210,7 +281,7 @@ else:
     st.markdown("""
         <div class='warning-box'>
             <strong>GPS não disponível</strong><br/>
-            Verifique se o GPS está ativado, o navegador tem permissão e está usando HTTPS.
+            Ative o GPS, permita acesso à localização e use HTTPS.
         </div>
     """, unsafe_allow_html=True)
 
@@ -222,7 +293,7 @@ if not responsavel.strip() or not medicao_fiscal.strip():
     st.markdown("""
         <div class='warning-box'>
             <strong>Campos obrigatórios</strong><br/>
-            Preencha "Responsável" e "Medição Fiscal" antes de adicionar fotos.
+            Preencha "Responsável" e "Medição Fiscal".
         </div>
     """, unsafe_allow_html=True)
     st.stop()
@@ -253,13 +324,15 @@ if foto:
 
     nome_apontamento = st.text_input(
         "Nome do Apontamento",
-        value=f"Apontamento {len(st.session_state.registros) + 1}"
+        value=f"Apontamento {len(st.session_state.registros) + 1}",
+        max_chars=100
     )
 
     descricao = st.text_area(
         "Descrição / Observações",
-        height=100,
-        placeholder="Adicione observações sobre a foto (opcional)"
+        height=80,
+        max_chars=500,
+        placeholder="Adicione observações (opcional)"
     )
 
     # =================================================
@@ -278,23 +351,23 @@ if foto:
             </div>
         """, unsafe_allow_html=True)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.text(f"Latitude: {latitude}")
-        with col2:
-            st.text(f"Longitude: {longitude}")
+        st.markdown("<div class='photo-info'>", unsafe_allow_html=True)
+        st.text(f"Latitude: {latitude}")
+        st.text(f"Longitude: {longitude}")
 
         if precisao is not None:
             st.text(f"Precisão: ±{round(float(precisao), 1)} m")
 
         if gps_timestamp:
-            st.caption(f"GPS capturado em: {gps_timestamp}")
+            st.caption(f"GPS: {gps_timestamp}")
+        
+        st.markdown("</div>", unsafe_allow_html=True)
 
     else:
         st.markdown("""
             <div class='warning-box'>
                 <strong>GPS não disponível</strong><br/>
-                Esta foto será salva sem coordenadas de localização.
+                Esta foto será salva sem localização.
             </div>
         """, unsafe_allow_html=True)
 
@@ -302,13 +375,14 @@ if foto:
     # BOTÕES
     # =================================================
 
-    col1, col2 = st.columns(2, gap="medium")
+    col1, col2 = st.columns(2, gap="small")
 
     with col1:
         if st.button(
             "Adicionar Foto",
             type="primary",
-            use_container_width=True
+            use_container_width=True,
+            key="btn_add"
         ):
             if not nome_apontamento.strip():
                 st.error("Informe o nome do apontamento")
@@ -337,7 +411,8 @@ if foto:
     with col2:
         if st.button(
             "Cancelar",
-            use_container_width=True
+            use_container_width=True,
+            key="btn_cancel"
         ):
             st.session_state.camera_key += 1
             st.rerun()
@@ -349,40 +424,40 @@ if foto:
 if st.session_state.registros:
     st.markdown("<div class='section-header'>Fotos do Relatório</div>", unsafe_allow_html=True)
 
-    st.info(f"{len(st.session_state.registros)} foto(s) adicionada(s)")
+    st.info(f"{len(st.session_state.registros)} foto(s)")
 
     remover = None
 
     for idx, reg in enumerate(st.session_state.registros):
         with st.expander(f"{reg['id']} — {reg['nome_apontamento']}", expanded=False):
-            col1, col2 = st.columns([2, 1], gap="large")
+            st.image(reg["imagem"], use_container_width=True)
 
-            with col1:
-                st.image(reg["imagem"], use_container_width=True)
+            st.markdown("<div class='photo-info'>", unsafe_allow_html=True)
+            
+            st.text(f"Data: {reg['data_hora']}")
+            
+            if reg["descricao"]:
+                st.text(f"Descrição: {reg['descricao']}")
 
-            with col2:
-                st.text(f"Data: {reg['data_hora']}")
+            if reg["latitude"] is not None and reg["longitude"] is not None:
+                st.text(f"Latitude: {reg['latitude']}")
+                st.text(f"Longitude: {reg['longitude']}")
                 
-                if reg["descricao"]:
-                    st.text(f"Descrição: {reg['descricao']}")
-
-                if reg["latitude"] is not None and reg["longitude"] is not None:
-                    st.text(f"Latitude: {reg['latitude']}")
-                    st.text(f"Longitude: {reg['longitude']}")
-                    
-                    if reg.get("precisao") is not None:
-                        st.text(f"Precisão: ±{round(float(reg['precisao']), 1)} m")
-                    
-                    if reg.get("gps_timestamp"):
-                        st.caption(f"GPS: {reg['gps_timestamp']}")
-                    
-                    if reg.get("maps_link"):
-                        st.markdown(f"[Abrir no Google Maps]({reg['maps_link']})")
-                else:
-                    st.text("Sem coordenadas GPS")
+                if reg.get("precisao") is not None:
+                    st.text(f"Precisão: ±{round(float(reg['precisao']), 1)} m")
+                
+                if reg.get("gps_timestamp"):
+                    st.caption(f"GPS: {reg['gps_timestamp']}")
+                
+                if reg.get("maps_link"):
+                    st.markdown(f"[Abrir no Google Maps]({reg['maps_link']})")
+            else:
+                st.text("Sem coordenadas GPS")
+            
+            st.markdown("</div>", unsafe_allow_html=True)
 
             if st.button(
-                f"Remover foto {idx + 1}",
+                f"Remover",
                 key=f"rem_{idx}",
                 use_container_width=True
             ):
@@ -532,7 +607,7 @@ def gerar_pdf(registros):
 if st.session_state.registros:
     st.markdown("<div class='section-header'>Exportar Relatório</div>", unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns(3, gap="medium")
+    col1, col2 = st.columns(2, gap="small")
 
     with col1:
         st.download_button(
@@ -552,13 +627,12 @@ if st.session_state.registros:
             use_container_width=True
         )
 
-    with col3:
-        if st.button(
-            "Limpar Relatório",
-            use_container_width=True
-        ):
-            st.session_state.registros = []
-            st.rerun()
+    if st.button(
+        "Limpar Relatório",
+        use_container_width=True
+    ):
+        st.session_state.registros = []
+        st.rerun()
 
 # =====================================================
 # FOOTER
