@@ -4,6 +4,8 @@ from io import BytesIO
 from datetime import datetime
 import pandas as pd
 import tempfile
+import json
+import base64
 
 # PDF
 from reportlab.platypus import (
@@ -157,6 +159,66 @@ if "registros" not in st.session_state:
 
 if "camera_key" not in st.session_state:
     st.session_state.camera_key = 0
+
+# =====================================================
+# PERSISTÊNCIA EM LOCALSTORAGE
+# =====================================================
+
+def codificar_imagem(imagem):
+    """Converte PIL Image para base64"""
+    buffer = BytesIO()
+    imagem.save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode()
+
+def decodificar_imagem(base64_str):
+    """Converte base64 para PIL Image"""
+    try:
+        img_data = base64.b64decode(base64_str)
+        return Image.open(BytesIO(img_data))
+    except:
+        return None
+
+def sincronizar_registros_para_storage():
+    """Salva registros no localStorage"""
+    registros_json = []
+    for reg in st.session_state.registros:
+        reg_dict = reg.copy()
+        # Converte imagem para base64
+        if "imagem" in reg_dict and reg_dict["imagem"]:
+            reg_dict["imagem"] = codificar_imagem(reg_dict["imagem"])
+        registros_json.append(reg_dict)
+    
+    # Script JS para salvar
+    st.components.v1.html(
+        f"""
+        <script>
+        localStorage.setItem("registros_gambiarra", JSON.stringify({json.dumps(registros_json)}));
+        </script>
+        """,
+        height=0
+    )
+
+def carregar_registros_do_storage():
+    """Carrega registros do localStorage"""
+    registros_data = streamlit_js_eval(
+        js_expressions="""
+        JSON.parse(localStorage.getItem("registros_gambiarra") || "[]")
+        """,
+        key="load_registros"
+    )
+    
+    if registros_data and isinstance(registros_data, list):
+        registros_carregados = []
+        for reg in registros_data:
+            if "imagem" in reg and reg["imagem"]:
+                reg["imagem"] = decodificar_imagem(reg["imagem"])
+            registros_carregados.append(reg)
+        return registros_carregados
+    return []
+
+# Carrega registros salvos ao iniciar
+if not st.session_state.registros:
+    st.session_state.registros = carregar_registros_do_storage()
 
 # =====================================================
 # GPS CONTÍNUO
@@ -403,6 +465,10 @@ if foto:
                 }
 
                 st.session_state.registros.append(registro)
+                
+                # Sincroniza com localStorage
+                sincronizar_registros_para_storage()
+                
                 st.success("Foto adicionada com sucesso")
 
                 st.session_state.camera_key += 1
@@ -465,6 +531,8 @@ if st.session_state.registros:
 
     if remover is not None:
         st.session_state.registros.pop(remover)
+        # Sincroniza remoção com localStorage
+        sincronizar_registros_para_storage()
         st.rerun()
 
 # =====================================================
@@ -632,6 +700,15 @@ if st.session_state.registros:
         use_container_width=True
     ):
         st.session_state.registros = []
+        # Limpa localStorage também
+        st.components.v1.html(
+            """
+            <script>
+            localStorage.removeItem("registros_gambiarra");
+            </script>
+            """,
+            height=0
+        )
         st.rerun()
 
 # =====================================================
