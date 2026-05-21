@@ -16,8 +16,11 @@ from reportlab.platypus import (
     PageBreak
 )
 
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+from reportlab.lib.enums import TA_CENTER
+from reportlab.pdfgen import canvas
 
 # JS
 from streamlit_js_eval import streamlit_js_eval
@@ -571,6 +574,18 @@ def gerar_pdf(registros):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
+    
+    # Estilo customizado para link
+    link_style = ParagraphStyle(
+        'LinkStyle',
+        parent=styles['Normal'],
+        fontSize=11,
+        textColor='#0066CC',
+        underline=True,
+        spaceAfter=12,
+        alignment=TA_CENTER
+    )
+    
     elementos = []
 
     # Cabeçalho
@@ -654,8 +669,8 @@ def gerar_pdf(registros):
 
             maps_link_reg = reg.get("maps_link")
             if maps_link_reg:
-                link = f'<link href="{maps_link_reg}">Abrir localização no Google Maps</link>'
-                elementos.append(Paragraph(link, styles["Normal"]))
+                link_html = f'<link href="{maps_link_reg}" color="blue"><u><b>🗺️ Abrir localização no Google Maps</b></u></link>'
+                elementos.append(Paragraph(link_html, link_style))
 
         else:
             elementos.append(Paragraph(
