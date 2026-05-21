@@ -613,7 +613,7 @@ if st.session_state.registros:
         st.download_button(
             label="Baixar Excel",
             data=gerar_excel(st.session_state.registros),
-            file_name=f"{medicao_fiscal}_{datetime.now().strftime('%d-%m-%Y')}.xlsx",
+            file_name=f"{responsavel}_{medicao_fiscal}_{datetime.now().strftime('%d-%m-%Y')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
@@ -622,7 +622,7 @@ if st.session_state.registros:
         st.download_button(
             label="Baixar PDF",
             data=gerar_pdf(st.session_state.registros),
-            file_name=f"{medicao_fiscal}_{datetime.now().strftime('%d-%m-%Y')}.pdf",
+            file_name=f"{responsavel}_{medicao_fiscal}_{datetime.now().strftime('%d-%m-%Y')}.pdf",
             mime="application/pdf",
             use_container_width=True
         )
