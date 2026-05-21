@@ -639,4 +639,4 @@ if st.session_state.registros:
 # =====================================================
 
 st.divider()
-st.caption("GPS contínuo via watchPosition()")
+st.caption("Desenvolvido por José Pedrosa")
